@@ -1,22 +1,16 @@
 #ifndef SIGNLANG_EYES_EDGEAI_AUDIO_FRONTEND_AUDIO_FRAME_HPP
 #define SIGNLANG_EYES_EDGEAI_AUDIO_FRONTEND_AUDIO_FRAME_HPP
 
+#include "audio_format.hpp"
+
 #include <array>
 #include <cstdint>
 #include <type_traits>
 
 namespace signlang::audio_frontend {
 
-constexpr std::uint32_t kSampleRateHz = 16'000;
-constexpr std::uint32_t kFramesPerMillisecond = kSampleRateHz / 1'000;
-constexpr std::uint16_t kChannelCount = 1;
-constexpr std::uint16_t kBitsPerSample = 16;
-constexpr std::uint32_t kDefaultPublishPeriodMs = 100;
-constexpr std::uint32_t kMaxPublishPeriodMs = 1'000;
-constexpr std::uint32_t kMaxFramesPerPacket = kFramesPerMillisecond * kMaxPublishPeriodMs;
-constexpr std::uint32_t kMaxSamplesPerPacket = kMaxFramesPerPacket * kChannelCount;
-
-static_assert(kSampleRateHz % 1'000 == 0);
+constexpr std::uint32_t kMaxFramesPerPacket = kMaxSampleRateHz * kMaxPublishPeriodMs / 1000;
+constexpr std::uint32_t kMaxSamplesPerPacket = kMaxFramesPerPacket * kMaxChannelCount;
 
 struct AudioFrame {
     std::uint64_t sequence_number;

@@ -1,6 +1,8 @@
 #ifndef SIGNLANG_EYES_EDGEAI_AUDIO_FRONTEND_PROGRAM_OPTIONS_HPP
 #define SIGNLANG_EYES_EDGEAI_AUDIO_FRONTEND_PROGRAM_OPTIONS_HPP
 
+#include "audio_format.hpp"
+
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -11,6 +13,8 @@ struct ProgramOptions {
     std::string audio_device_name;
     std::string service_name;
     std::uint32_t publish_period_ms;
+    AudioFormatRequest capture_format;
+    AudioFormatRequest publish_format;
 };
 
 struct ProgramUsage {

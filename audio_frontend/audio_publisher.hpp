@@ -5,11 +5,13 @@
 
 #include "iox2/iceoryx2.hpp"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace signlang::audio_frontend {
 
-class AlsaCaptureDevice;
+class AudioProcessor;
 
 class AudioPublisher {
   public:
@@ -20,7 +22,9 @@ class AudioPublisher {
     AudioPublisher(AudioPublisher&&) = delete;
     auto operator=(AudioPublisher&&) -> AudioPublisher& = delete;
 
-    void capture_and_publish(AlsaCaptureDevice& capture_device, std::uint64_t sequence_number);
+    void publish(const std::vector<std::int16_t>& input_samples,
+                 const AudioProcessor& audio_processor,
+                 std::uint64_t sequence_number);
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
