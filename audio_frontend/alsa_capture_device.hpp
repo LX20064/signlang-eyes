@@ -11,10 +11,9 @@
 
 namespace signlang::audio_frontend {
 
-class AlsaCaptureDevice {
+  class AlsaCaptureDevice {
   public:
-    AlsaCaptureDevice(const std::string& device_name,
-                      AudioFormatRequest format_request,
+    AlsaCaptureDevice(const std::string& device_name, AudioFormatRequest format_request,
                       std::uint32_t publish_period_ms);
     ~AlsaCaptureDevice() = default;
 
@@ -28,7 +27,7 @@ class AlsaCaptureDevice {
 
   private:
     struct PcmHandleDeleter {
-        void operator()(snd_pcm_t* handle) const noexcept;
+      void operator()(snd_pcm_t* handle) const noexcept;
     };
 
     using PcmHandle = std::unique_ptr<snd_pcm_t, PcmHandleDeleter>;
@@ -45,7 +44,7 @@ class AlsaCaptureDevice {
     std::uint32_t publish_period_ms_;
     snd_pcm_uframes_t frames_per_packet_;
     std::vector<std::int16_t> sample_buffer_;
-};
+  };
 
 } // namespace signlang::audio_frontend
 

@@ -11,9 +11,9 @@
 
 namespace signlang::audio_frontend {
 
-class AudioProcessor;
+  class AudioProcessor;
 
-class AudioPublisher {
+  class AudioPublisher {
   public:
     explicit AudioPublisher(const std::string& service_name);
 
@@ -22,8 +22,7 @@ class AudioPublisher {
     AudioPublisher(AudioPublisher&&) = delete;
     auto operator=(AudioPublisher&&) -> AudioPublisher& = delete;
 
-    void publish(const std::vector<std::int16_t>& input_samples,
-                 const AudioProcessor& audio_processor,
+    void publish(const std::vector<std::int16_t>& input_samples, const AudioProcessor& audio_processor,
                  std::uint64_t sequence_number);
 
   private:
@@ -33,7 +32,7 @@ class AudioPublisher {
 
     iox2::Node<iox2::ServiceType::Ipc> node_;
     iox2::Publisher<iox2::ServiceType::Ipc, AudioFrame, void> publisher_;
-};
+  };
 
 } // namespace signlang::audio_frontend
 

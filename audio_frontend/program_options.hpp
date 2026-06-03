@@ -9,21 +9,21 @@
 
 namespace signlang::audio_frontend {
 
-struct ProgramOptions {
+  struct ProgramOptions {
     std::string audio_device_name;
     std::string service_name;
     std::uint32_t publish_period_ms;
     AudioFormatRequest capture_format;
     AudioFormatRequest publish_format;
-};
+  };
 
-struct ProgramUsage {
+  struct ProgramUsage {
     std::string text;
-};
+  };
 
-using ProgramOptionsParseResult = std::variant<ProgramOptions, ProgramUsage>;
+  using ProgramOptionsParseResult = std::variant<ProgramOptions, ProgramUsage>;
 
-auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult;
+  auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult;
 
 } // namespace signlang::audio_frontend
 

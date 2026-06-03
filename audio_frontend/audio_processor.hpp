@@ -8,7 +8,7 @@
 
 namespace signlang::audio_frontend {
 
-class AudioProcessor {
+  class AudioProcessor {
   public:
     AudioProcessor(AudioFormat input_format, AudioFormat output_format, std::uint32_t publish_period_ms);
 
@@ -19,14 +19,13 @@ class AudioProcessor {
 
   private:
     auto input_frame_count() const -> std::uint32_t;
-    auto mix_channel(const std::vector<std::int16_t>& input_samples,
-                     std::uint32_t input_frame_index,
+    auto mix_channel(const std::vector<std::int16_t>& input_samples, std::uint32_t input_frame_index,
                      std::uint16_t output_channel_index) const -> std::int32_t;
 
     AudioFormat input_format_;
     AudioFormat output_format_;
     std::uint32_t publish_period_ms_;
-};
+  };
 
 } // namespace signlang::audio_frontend
 
