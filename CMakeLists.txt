@@ -10,6 +10,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 
 include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Do not update already-populated FetchContent dependencies")
 
 if(NOT TARGET cxxopts)
 
@@ -43,3 +44,4 @@ if(NOT TARGET iceoryx2-cxx)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/audio_frontend)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/speech_asr)
