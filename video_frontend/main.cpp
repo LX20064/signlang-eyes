@@ -1,5 +1,6 @@
 #include "program_options.hpp"
 #include "v4l2_capture_device.hpp"
+#include "video_processor.hpp"
 #include "video_publisher.hpp"
 
 #include <csignal>
@@ -24,10 +25,6 @@ namespace {
       -> signlang::video_frontend::VideoFormat {
     const auto output_width = output_request.width.value_or(capture_format.width);
     const auto output_height = output_request.height.value_or(capture_format.height);
-    if (output_width != capture_format.width || output_height != capture_format.height) {
-      throw std::runtime_error("Output resolution scaling is not implemented yet; use capture resolution for now");
-    }
-
     return signlang::video_frontend::VideoFormat{
         .width = output_width,
         .height = output_height,
@@ -42,6 +39,7 @@ auto main(int argc, char** argv) -> int {
   using signlang::video_frontend::ProgramOptions;
   using signlang::video_frontend::ProgramUsage;
   using signlang::video_frontend::V4l2CaptureDevice;
+  using signlang::video_frontend::VideoProcessor;
   using signlang::video_frontend::VideoPublisher;
 
   try {
@@ -57,12 +55,14 @@ auto main(int argc, char** argv) -> int {
     V4l2CaptureDevice capture_device{options.camera_device_name, options.capture_format, options.fps};
     const auto capture_format = capture_device.format();
     const auto output_format = resolve_output_format(capture_format, options.output_format);
-    VideoPublisher publisher{options.service_name, capture_device.max_frame_size_bytes()};
+    VideoProcessor video_processor{capture_format, output_format};
+    VideoPublisher publisher{options.service_name,
+                             video_processor.max_output_size_bytes(capture_device.max_frame_size_bytes())};
 
     std::uint64_t sequence_number = 0;
     while (g_should_stop == 0) {
       const auto frame = capture_device.capture_frame();
-      publisher.publish(frame, capture_format, output_format, capture_device.fps(), sequence_number++);
+      publisher.publish(frame, video_processor, capture_device.fps(), sequence_number++);
       capture_device.release_frame();
     }
 

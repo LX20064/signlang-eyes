@@ -12,6 +12,7 @@
 namespace signlang::video_frontend {
 
   struct CapturedVideoFrame;
+  class VideoProcessor;
 
   class VideoPublisher {
   public:
@@ -22,8 +23,8 @@ namespace signlang::video_frontend {
     VideoPublisher(VideoPublisher&&) = delete;
     auto operator=(VideoPublisher&&) -> VideoPublisher& = delete;
 
-    void publish(const CapturedVideoFrame& captured_frame, VideoFormat capture_format, VideoFormat output_format,
-                 std::uint32_t fps, std::uint64_t sequence_number);
+    void publish(const CapturedVideoFrame& captured_frame, const VideoProcessor& video_processor, std::uint32_t fps,
+                 std::uint64_t sequence_number);
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;

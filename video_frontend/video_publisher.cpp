@@ -1,6 +1,7 @@
 #include "video_publisher.hpp"
 
 #include "v4l2_capture_device.hpp"
+#include "video_processor.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -23,18 +24,21 @@ namespace signlang::video_frontend {
       node_{create_node()}, publisher_{create_publisher(node_, service_name, max_payload_size_bytes)},
       max_payload_size_bytes_{max_payload_size_bytes} {}
 
-  void VideoPublisher::publish(const CapturedVideoFrame& captured_frame, VideoFormat capture_format,
-                               VideoFormat output_format, std::uint32_t fps, std::uint64_t sequence_number) {
-    if (captured_frame.size_bytes > max_payload_size_bytes_) {
-      throw std::runtime_error("Captured video frame exceeds iceoryx2 payload capacity");
+  void VideoPublisher::publish(const CapturedVideoFrame& captured_frame, const VideoProcessor& video_processor,
+                               std::uint32_t fps, std::uint64_t sequence_number) {
+    const auto output_size_bytes = video_processor.output_size_bytes(captured_frame);
+    if (output_size_bytes > max_payload_size_bytes_) {
+      throw std::runtime_error("Processed video frame exceeds iceoryx2 payload capacity");
     }
 
-    auto loan_result = publisher_.loan_slice_uninit(captured_frame.size_bytes);
+    auto loan_result = publisher_.loan_slice_uninit(output_size_bytes);
     if (!loan_result.has_value()) {
       throw std::runtime_error("Failed to loan iceoryx2 video frame sample");
     }
 
     auto loaned_sample = std::move(loan_result.value());
+    const auto capture_format = video_processor.capture_format();
+    const auto output_format = video_processor.output_format();
     auto& metadata = loaned_sample.user_header_mut();
     metadata.sequence_number = sequence_number;
     metadata.timestamp_ns = steady_timestamp_ns();
@@ -44,10 +48,10 @@ namespace signlang::video_frontend {
     metadata.output_height = output_format.height;
     metadata.fps = fps;
     metadata.pixel_format = output_format.pixel_format;
-    metadata.payload_size_bytes = captured_frame.size_bytes;
+    metadata.payload_size_bytes = output_size_bytes;
 
     auto payload = loaned_sample.payload_mut();
-    std::memcpy(payload.data(), captured_frame.data, captured_frame.size_bytes);
+    video_processor.process(captured_frame, payload);
 
     auto initialized_sample = iox2::assume_init(std::move(loaned_sample));
     const auto send_result = iox2::send(std::move(initialized_sample));
