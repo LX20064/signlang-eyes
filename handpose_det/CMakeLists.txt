@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(SIGNLANG_HANDPOSE_MODEL_PATH
+        "/mnt/f/temp/yolov8n-handpose/yolov8_handpose.rknn"
+        CACHE FILEPATH "Path to the external RKNN handpose model used for install packaging")
+
 add_executable(signlang_eyes_edgeai_handpose_det
         handpose_model.cpp
         handpose_preprocessor.cpp
@@ -31,3 +35,11 @@ add_executable(signlang_eyes_edgeai_handpose_preprocessor_test
 target_include_directories(signlang_eyes_edgeai_handpose_preprocessor_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR})
+
+install(TARGETS signlang_eyes_edgeai_handpose_det DESTINATION .)
+
+if(EXISTS "${SIGNLANG_HANDPOSE_MODEL_PATH}")
+        install(FILES "${SIGNLANG_HANDPOSE_MODEL_PATH}" DESTINATION model)
+else()
+        message(WARNING "SIGNLANG_HANDPOSE_MODEL_PATH does not exist: ${SIGNLANG_HANDPOSE_MODEL_PATH}")
+endif()
