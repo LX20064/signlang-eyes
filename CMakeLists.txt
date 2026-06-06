@@ -21,6 +21,10 @@ set(BUILD_TESTING OFF CACHE BOOL "Disable third-party dependency tests" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "Disable third-party dependency examples" FORCE)
 set(IOX2_CXX_STD_VERSION 20 CACHE STRING "C++ standard used by iceoryx2" FORCE)
 
+set(SIGNLANG_MODEL_ROOT
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        CACHE PATH "Local root directory for model assets")
+
 if(NOT TARGET cxxopts)
     FetchContent_Declare(
             cxxopts

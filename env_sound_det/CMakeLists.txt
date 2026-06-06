@@ -1,4 +1,6 @@
-set(ENV_SOUND_DET_MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/model)
+set(ENV_SOUND_DET_MODEL_DIR
+        ${SIGNLANG_MODEL_ROOT}/yamnet
+        CACHE PATH "Directory containing YAMNet RKNN model assets")
 set(ENV_SOUND_DET_MODEL_FILE ${ENV_SOUND_DET_MODEL_DIR}/yamnet_3s.rknn)
 set(ENV_SOUND_DET_CLASS_MAP_FILE ${ENV_SOUND_DET_MODEL_DIR}/yamnet_class_map.txt)
 

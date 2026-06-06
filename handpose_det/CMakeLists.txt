@@ -1,6 +1,7 @@
-set(SIGNLANG_HANDPOSE_MODEL_PATH
-        "/mnt/f/temp/yolov8n-handpose/yolov8_handpose.rknn"
-        CACHE FILEPATH "Path to the external RKNN handpose model used for install packaging")
+set(HANDPOSE_DET_MODEL_DIR
+        ${SIGNLANG_MODEL_ROOT}/yolov8n-handpose
+        CACHE PATH "Directory containing YOLOv8 hand pose RKNN model assets")
+set(HANDPOSE_DET_MODEL_FILE ${HANDPOSE_DET_MODEL_DIR}/yolov8_handpose.rknn)
 
 add_executable(signlang_eyes_edgeai_handpose_det
         handpose_model.cpp
@@ -35,8 +36,8 @@ endif()
 
 install(TARGETS signlang_eyes_edgeai_handpose_det DESTINATION .)
 
-if(EXISTS "${SIGNLANG_HANDPOSE_MODEL_PATH}")
-        install(FILES "${SIGNLANG_HANDPOSE_MODEL_PATH}" DESTINATION model)
+if(EXISTS "${HANDPOSE_DET_MODEL_FILE}")
+        install(FILES "${HANDPOSE_DET_MODEL_FILE}" DESTINATION model)
 else()
-        message(WARNING "SIGNLANG_HANDPOSE_MODEL_PATH does not exist: ${SIGNLANG_HANDPOSE_MODEL_PATH}")
+        message(WARNING "HANDPOSE_DET_MODEL_FILE does not exist: ${HANDPOSE_DET_MODEL_FILE}")
 endif()

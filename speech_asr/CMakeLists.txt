@@ -1,4 +1,6 @@
-set(SPEECH_ASR_MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/model)
+set(SPEECH_ASR_MODEL_DIR
+        ${SIGNLANG_MODEL_ROOT}/whisper
+        CACHE PATH "Directory containing Whisper RKNN model assets")
 set(SPEECH_ASR_ENCODER_MODEL_FILE ${SPEECH_ASR_MODEL_DIR}/whisper_encoder_base_15s.rknn)
 set(SPEECH_ASR_DECODER_MODEL_FILE ${SPEECH_ASR_MODEL_DIR}/whisper_decoder_base_15s.rknn)
 set(SPEECH_ASR_MEL_FILTERS_FILE ${SPEECH_ASR_MODEL_DIR}/mel_80_filters.txt)
