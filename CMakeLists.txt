@@ -43,5 +43,6 @@ if(NOT TARGET iceoryx2-cxx)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/audio_frontend)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/env_sound_det)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/video_frontend)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/handpose_det)

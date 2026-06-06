@@ -73,3 +73,7 @@ Testing/
 
 # codex
 AGENTS.md
+
+# RKNN models
+*.rknn
+*/model/
