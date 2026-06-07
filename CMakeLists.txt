@@ -56,6 +56,36 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     set(SIGNLANG_IS_AARCH64 ON)
 endif()
 
+enable_language(C)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party dependencies as static libraries" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "Disable third-party dependency tests" FORCE)
+set(ENABLE_FLOAT ON CACHE BOOL "Build FFTW in single precision" FORCE)
+set(ENABLE_THREADS OFF CACHE BOOL "Disable FFTW threading support" FORCE)
+set(DISABLE_FORTRAN ON CACHE BOOL "Disable FFTW Fortran wrappers" FORCE)
+
+if(NOT TARGET fftw3f)
+    FetchContent_Declare(
+            fftw
+            URL http://www.fftw.org/fftw-3.3.10.tar.gz
+            URL_HASH SHA256=56c932549852cddcfafdab3820b0200c7742675be92179e59e6215b340e26467
+    )
+
+    FetchContent_GetProperties(fftw)
+    if(NOT fftw_POPULATED)
+        FetchContent_Populate(fftw)
+        add_subdirectory(${fftw_SOURCE_DIR} ${fftw_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
+endif()
+
+if(NOT TARGET fftw3f)
+    message(FATAL_ERROR "FFTW FetchContent did not define fftw3f target")
+endif()
+
+set(SIGNLANG_FFTW3F_INCLUDE_DIRS
+        ${fftw_SOURCE_DIR}/api
+        ${fftw_BINARY_DIR}/api)
+
 set(SIGNLANG_RKNN_RUNTIME_ROOT
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rknn_runtime
         CACHE PATH "Project-local RKNN runtime root")
@@ -78,39 +108,6 @@ if(SIGNLANG_IS_AARCH64
     target_link_libraries(signlang_rknn_runtime INTERFACE
             signlang::rknn_headers)
     add_library(signlang::rknn_runtime ALIAS signlang_rknn_runtime)
-endif()
-
-if(SIGNLANG_IS_AARCH64)
-    enable_language(C)
-
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party dependencies as static libraries" FORCE)
-    set(BUILD_TESTS OFF CACHE BOOL "Disable third-party dependency tests" FORCE)
-    set(ENABLE_FLOAT ON CACHE BOOL "Build FFTW in single precision" FORCE)
-    set(ENABLE_THREADS OFF CACHE BOOL "Disable FFTW threading support" FORCE)
-    set(DISABLE_FORTRAN ON CACHE BOOL "Disable FFTW Fortran wrappers" FORCE)
-
-    if(NOT TARGET fftw3f)
-        FetchContent_Declare(
-                fftw
-                GIT_REPOSITORY https://github.com/FFTW/fftw3.git
-                GIT_TAG fftw-3.3.10
-                GIT_SHALLOW TRUE
-        )
-
-        FetchContent_GetProperties(fftw)
-        if(NOT fftw_POPULATED)
-            FetchContent_Populate(fftw)
-            add_subdirectory(${fftw_SOURCE_DIR} ${fftw_BINARY_DIR} EXCLUDE_FROM_ALL)
-        endif()
-    endif()
-
-    if(NOT TARGET fftw3f)
-        message(FATAL_ERROR "FFTW FetchContent did not define fftw3f target")
-    endif()
-
-    set(SIGNLANG_FFTW3F_INCLUDE_DIRS
-            ${fftw_SOURCE_DIR}/api
-            ${fftw_BINARY_DIR}/api)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/audio_frontend)
