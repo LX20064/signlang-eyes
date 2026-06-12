@@ -27,6 +27,9 @@ endif()
 
 set(SIGNLANG_MODEL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/models CACHE PATH "Local root directory for model assets")
 
+# Add src directory to include path for cross-module headers
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # cxxopts
 add_library(cxxopts INTERFACE)
 target_include_directories(cxxopts INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cxxopts/include)
@@ -60,8 +63,9 @@ target_link_libraries(signlang_rknn_runtime INTERFACE signlang::rknn_headers)
 add_library(signlang::rknn_runtime ALIAS signlang_rknn_runtime)
 
 # Modules
-add_subdirectory(audio_frontend)
-add_subdirectory(speech_asr)
-add_subdirectory(env_sound_det)
-add_subdirectory(video_frontend)
-add_subdirectory(handpose_det)
+file(GLOB MODULE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/*)
+foreach(MODULE_DIR ${MODULE_DIRS})
+    if(IS_DIRECTORY ${MODULE_DIR})
+        add_subdirectory(${MODULE_DIR})
+    endif()
+endforeach()
