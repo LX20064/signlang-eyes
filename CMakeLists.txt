@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Disable PIE to allow linking with prebuilt FFTW library (which was not compiled with -fPIC)
+# set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-pie")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-pie")
 
 option(SIGNLANG_ENABLE_TESTS "Build signlang-eyes-edgeai test executables" ON)
 
@@ -58,33 +62,32 @@ endif()
 
 enable_language(C)
 
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party dependencies as static libraries" FORCE)
-set(BUILD_TESTS OFF CACHE BOOL "Disable third-party dependency tests" FORCE)
-set(ENABLE_FLOAT ON CACHE BOOL "Build FFTW in single precision" FORCE)
-set(ENABLE_THREADS OFF CACHE BOOL "Disable FFTW threading support" FORCE)
-set(DISABLE_FORTRAN ON CACHE BOOL "Disable FFTW Fortran wrappers" FORCE)
+# Use prebuilt FFTW from third_party
+set(SIGNLANG_FFTW_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fftw)
+set(SIGNLANG_FFTW3F_INCLUDE_DIRS ${SIGNLANG_FFTW_ROOT}/include)
 
-if(NOT TARGET fftw3f)
-    FetchContent_Declare(
-            fftw
-            URL http://www.fftw.org/fftw-3.3.10.tar.gz
-            URL_HASH SHA256=56c932549852cddcfafdab3820b0200c7742675be92179e59e6215b340e26467
-    )
-
-    FetchContent_GetProperties(fftw)
-    if(NOT fftw_POPULATED)
-        FetchContent_Populate(fftw)
-        add_subdirectory(${fftw_SOURCE_DIR} ${fftw_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+if(SIGNLANG_IS_AARCH64)
+    set(SIGNLANG_FFTW3F_LIBRARY ${SIGNLANG_FFTW_ROOT}/lib/aarch64/libfftw3f.a)
+else()
+    message(FATAL_ERROR "FFTW prebuilt library only available for aarch64")
 endif()
 
-if(NOT TARGET fftw3f)
-    message(FATAL_ERROR "FFTW FetchContent did not define fftw3f target")
+if(NOT EXISTS "${SIGNLANG_FFTW3F_LIBRARY}")
+    message(FATAL_ERROR "FFTW library not found at ${SIGNLANG_FFTW3F_LIBRARY}")
 endif()
 
-set(SIGNLANG_FFTW3F_INCLUDE_DIRS
-        ${fftw_SOURCE_DIR}/api
-        ${fftw_BINARY_DIR}/api)
+if(NOT EXISTS "${SIGNLANG_FFTW3F_INCLUDE_DIRS}/fftw3.h")
+    message(FATAL_ERROR "FFTW header not found at ${SIGNLANG_FFTW3F_INCLUDE_DIRS}/fftw3.h")
+endif()
+
+message(STATUS "Using prebuilt FFTW: ${SIGNLANG_FFTW3F_LIBRARY}")
+
+if(NOT TARGET fftw3f)
+    add_library(fftw3f STATIC IMPORTED GLOBAL)
+    set_target_properties(fftw3f PROPERTIES
+            IMPORTED_LOCATION ${SIGNLANG_FFTW3F_LIBRARY}
+            INTERFACE_INCLUDE_DIRECTORIES ${SIGNLANG_FFTW3F_INCLUDE_DIRS})
+endif()
 
 set(SIGNLANG_RKNN_RUNTIME_ROOT
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rknn_runtime
