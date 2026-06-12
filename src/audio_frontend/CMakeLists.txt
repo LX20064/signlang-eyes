@@ -6,12 +6,11 @@ add_executable(signlang_eyes_edgeai_audio_frontend
         main.cpp)
 
 target_include_directories(signlang_eyes_edgeai_audio_frontend PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${SIGNLANG_FFTW3F_INCLUDE_DIRS})
+        ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(signlang_eyes_edgeai_audio_frontend PRIVATE
         cxxopts::cxxopts
-        iceoryx2-cxx::static-lib-cxx
+        iceoryx2-cxx::shared-lib-cxx
         ALSA::ALSA
         fftw3f
         m)
@@ -24,8 +23,7 @@ if(SIGNLANG_ENABLE_TESTS)
                 audio_processor_test.cpp)
 
         target_include_directories(signlang_eyes_edgeai_audio_processor_test PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}
-                ${SIGNLANG_FFTW3F_INCLUDE_DIRS})
+                ${CMAKE_CURRENT_SOURCE_DIR})
 
         target_link_libraries(signlang_eyes_edgeai_audio_processor_test PRIVATE
                 fftw3f

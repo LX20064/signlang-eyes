@@ -10,7 +10,7 @@ target_include_directories(signlang_eyes_edgeai_video_frontend PRIVATE
 
 target_link_libraries(signlang_eyes_edgeai_video_frontend PRIVATE
         cxxopts::cxxopts
-        iceoryx2-cxx::static-lib-cxx)
+        iceoryx2-cxx::shared-lib-cxx)
 
 install(TARGETS signlang_eyes_edgeai_video_frontend DESTINATION bin)
 
@@ -23,7 +23,7 @@ if(SIGNLANG_ENABLE_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR})
 
         target_link_libraries(signlang_eyes_edgeai_video_processor_test PRIVATE
-                iceoryx2-cxx::static-lib-cxx)
+                iceoryx2-cxx::shared-lib-cxx)
 
         add_test(NAME signlang_eyes_edgeai_video_processor_test
                 COMMAND signlang_eyes_edgeai_video_processor_test)

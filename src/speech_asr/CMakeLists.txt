@@ -8,13 +8,9 @@ set(SPEECH_ASR_VOCAB_EN_FILE ${SPEECH_ASR_MODEL_DIR}/vocab_en.txt)
 set(SPEECH_ASR_VOCAB_ZH_FILE ${SPEECH_ASR_MODEL_DIR}/vocab_zh.txt)
 set(SPEECH_ASR_INSTALL_MODEL_DIR models/whisper)
 
-if(NOT SIGNLANG_IS_AARCH64)
-    message(STATUS "Skipping signlang_eyes_edgeai_speech_asr: RKNN runtime is project-local aarch64 only")
-    return()
-endif()
-
 if(NOT TARGET signlang::rknn_runtime)
-    message(FATAL_ERROR "Missing project-local RKNN runtime: ${SIGNLANG_RKNN_LIBRARY}")
+    message(STATUS "Skipping signlang_eyes_edgeai_speech_asr: RKNN runtime target not available")
+    return()
 endif()
 
 foreach(required_file
@@ -41,22 +37,16 @@ add_executable(signlang_eyes_edgeai_speech_asr
         main.cpp)
 
 target_include_directories(signlang_eyes_edgeai_speech_asr PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${SIGNLANG_FFTW3F_INCLUDE_DIRS})
+        ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(signlang_eyes_edgeai_speech_asr PRIVATE
         cxxopts::cxxopts
-        iceoryx2-cxx::static-lib-cxx
+        iceoryx2-cxx::shared-lib-cxx
         signlang::rknn_runtime
         fftw3f
         Threads::Threads
         m
         dl)
-
-set_target_properties(signlang_eyes_edgeai_speech_asr PROPERTIES
-        BUILD_RPATH ${SIGNLANG_RKNN_RUNTIME_ROOT}/lib/aarch64
-        INSTALL_RPATH "$ORIGIN/../lib")
 
 add_custom_command(TARGET signlang_eyes_edgeai_speech_asr POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -78,7 +68,6 @@ add_custom_command(TARGET signlang_eyes_edgeai_speech_asr POST_BUILD
         "$<TARGET_FILE_DIR:signlang_eyes_edgeai_speech_asr>/${SPEECH_ASR_INSTALL_MODEL_DIR}/vocab_zh.txt")
 
 install(TARGETS signlang_eyes_edgeai_speech_asr DESTINATION bin)
-install(FILES ${SIGNLANG_RKNN_LIBRARY} DESTINATION lib)
 install(FILES
         ${SPEECH_ASR_ENCODER_MODEL_FILE}
         ${SPEECH_ASR_DECODER_MODEL_FILE}

@@ -13,12 +13,11 @@ add_executable(signlang_eyes_edgeai_handpose_det
         main.cpp)
 
 target_include_directories(signlang_eyes_edgeai_handpose_det PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR})
+        ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(signlang_eyes_edgeai_handpose_det PRIVATE
         cxxopts::cxxopts
-        iceoryx2-cxx::static-lib-cxx
+        iceoryx2-cxx::shared-lib-cxx
         signlang::rknn_headers
         dl)
 
@@ -28,8 +27,7 @@ if(SIGNLANG_ENABLE_TESTS)
                 handpose_preprocessor_test.cpp)
 
         target_include_directories(signlang_eyes_edgeai_handpose_preprocessor_test PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}
-                ${CMAKE_SOURCE_DIR})
+                ${CMAKE_CURRENT_SOURCE_DIR})
 
         add_test(NAME signlang_eyes_edgeai_handpose_preprocessor_test
                 COMMAND signlang_eyes_edgeai_handpose_preprocessor_test)
