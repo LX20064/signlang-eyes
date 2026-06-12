@@ -71,6 +71,9 @@ Testing/
 # .idea
 .idea/
 
+# claude code
+CLAUDE.md
+
 # codex
 AGENTS.md
 
