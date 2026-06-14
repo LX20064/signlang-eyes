@@ -5,6 +5,9 @@
 
 namespace signlang::signlang_det {
 
+static_assert(signlang::handpose_det::kHandPoseKeypointCount == signlang::signlang_det::kKeypointCount,
+              "Keypoint count mismatch between handpose and signlang modules");
+
 FeatureExtractor::FeatureExtractor(float min_confidence)
   : min_confidence_(min_confidence) {}
 
@@ -109,7 +112,11 @@ auto FeatureExtractor::extract(
     feature.features[i].velocity_magnitude = velocities[i];
   }
 
-  prev_keypoints_ = keypoints;
+  if (sequence_continuous) {
+    prev_keypoints_ = keypoints;
+  } else {
+    prev_keypoints_.reset();  // Clear - forces next frame to have zero velocity
+  }
   prev_sequence_number_ = metadata.source_sequence_number;
 
   return feature;
