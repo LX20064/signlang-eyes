@@ -1,9 +1,9 @@
 set(SIGNLANG_DET_MODEL_DIR
-        ${SIGNLANG_MODEL_ROOT}/signlang-lstm
+        ${SIGNLANG_MODEL_ROOT}/signlang
         CACHE PATH "Directory containing sign language LSTM RKNN model assets")
 set(SIGNLANG_DET_MODEL_FILE ${SIGNLANG_DET_MODEL_DIR}/gesture_lstm.rknn)
 set(SIGNLANG_DET_LABEL_MAP_FILE ${SIGNLANG_DET_MODEL_DIR}/labels.txt)
-set(SIGNLANG_DET_INSTALL_MODEL_DIR models/signlang-lstm)
+set(SIGNLANG_DET_INSTALL_MODEL_DIR models/signlang)
 
 if(NOT TARGET signlang::rknn_runtime)
     message(STATUS "Skipping signlang_eyes_edgeai_signlang_det: RKNN runtime target not available")
