@@ -24,6 +24,8 @@ public:
   auto get_window(std::uint32_t window_size)
     -> std::optional<std::vector<FeatureVector>>;
 
+  void clear();
+
   auto size() const -> std::uint32_t;
   auto capacity() const -> std::uint32_t;
 

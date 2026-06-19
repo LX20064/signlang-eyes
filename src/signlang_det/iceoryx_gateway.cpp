@@ -60,7 +60,7 @@ namespace signlang::signlang_det {
   auto IpcSignlangPublisher::create_publisher(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                               const std::string& service_name)
       -> iox2::Publisher<iox2::ServiceType::Ipc, SignlangResult, void> {
-    auto service_result = node.service_builder(service_name_from_string(SignlangResult::IOX2_TYPE_NAME))
+    auto service_result = node.service_builder(service_name_from_string(service_name))
                               .publish_subscribe<SignlangResult>()
                               .open_or_create();
 
@@ -78,9 +78,7 @@ namespace signlang::signlang_det {
   }
 
   IpcSignlangPublisher::IpcSignlangPublisher(const std::string& service_name) :
-      node_(create_node()), publisher_(create_publisher(node_, service_name)) {
-    static_cast<void>(service_name);
-  }
+      node_(create_node()), publisher_(create_publisher(node_, service_name)) {}
 
   void IpcSignlangPublisher::publish(const SignlangResult& result) {
     auto loan_result = publisher_.loan_uninit();

@@ -144,6 +144,11 @@ auto main(int argc, char** argv) -> int {
           copy_inference_result(inference_result, result);
 
           result_publisher.publish(result);
+          // TODO: If the design requires automatic transition to DangerousSound state
+          // when a dangerous sound class (e.g. gunshot, siren) is detected with high
+          // confidence, add a Request-Response client here to call
+          // IpcStateControlClient::send_request(EnterSpecial, DangerousSound, timeout).
+          // Currently the DangerousSound state is only entered via external supervisor.
           next_window_start_sample = audio_window.start_sample_index + hop_sample_count;
         }
       } catch (...) {

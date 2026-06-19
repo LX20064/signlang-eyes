@@ -119,7 +119,7 @@ namespace signlang::signlang_det {
     const auto payload = current_sample.payload();
     const auto& metadata = current_sample.user_header();
 
-    handler(metadata, payload.data(), payload.number_of_elements());
+    handler(metadata, payload.data(), metadata.detection_count);
     return true;
   }
 

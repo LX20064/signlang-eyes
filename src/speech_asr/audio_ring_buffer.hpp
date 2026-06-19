@@ -38,6 +38,7 @@ namespace signlang::speech_asr {
     auto wait_for_window(std::optional<std::uint64_t>& requested_start_sample_index,
                          std::uint64_t window_sample_count, std::uint64_t hop_sample_count,
                          const std::atomic_bool& should_stop, AudioWindow& output_window) -> bool;
+    void clear();
     void notify_stop();
 
   private:

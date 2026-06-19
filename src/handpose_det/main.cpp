@@ -3,9 +3,11 @@
 #include "program_options.hpp"
 
 #include <array>
+#include <chrono>
 #include <csignal>
 #include <exception>
 #include <iostream>
+#include <thread>
 #include <variant>
 
 namespace {
@@ -51,7 +53,16 @@ auto main(int argc, char** argv) -> int {
       state_monitor.try_wait_for_state_change();
 
       if (!state_monitor.is_enabled()) {
-        state_monitor.wait_for_state_change_blocking();
+        // Poll for state change with stop check to avoid hang on shutdown
+        while (g_should_stop == 0 && !state_monitor.is_enabled()) {
+          state_monitor.try_wait_for_state_change();
+          if (!state_monitor.is_enabled()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          }
+        }
+        if (g_should_stop != 0) {
+          break;
+        }
         continue;
       }
 

@@ -114,8 +114,19 @@ namespace {
       state_monitor.try_wait_for_state_change();
 
       if (!state_monitor.is_enabled()) {
-        // When disabled, block until state changes
-        state_monitor.wait_for_state_change_blocking();
+        // Poll for state change with stop check to avoid hang on shutdown
+        while (!should_stop.load() && !state_monitor.is_enabled()) {
+          state_monitor.try_wait_for_state_change();
+          if (!state_monitor.is_enabled()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          }
+        }
+        if (should_stop.load()) {
+          break;
+        }
+        // Discard stale data accumulated during disabled period
+        ring_buffer.clear();
+        last_processed_seq = 0;
         continue;
       }
 

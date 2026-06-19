@@ -73,6 +73,12 @@ auto KeypointRingBuffer::size() const -> std::uint32_t {
   return count_;
 }
 
+void KeypointRingBuffer::clear() {
+  std::lock_guard lock(mutex_);
+  head_ = 0;
+  count_ = 0;
+}
+
 auto KeypointRingBuffer::capacity() const -> std::uint32_t {
   return capacity_;
 }
