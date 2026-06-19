@@ -35,13 +35,13 @@ constexpr auto kAudioLocalizationBlackboard = "audio_source_localization";
 
 namespace {
 
-constexpr auto kExeStateMachine  = "bin/signlang_eyes_state_machine";
-constexpr auto kExeAudioFrontend = "bin/signlang_eyes_edgeai_audio_frontend";
-constexpr auto kExeVideoFrontend = "bin/signlang_eyes_edgeai_video_frontend";
-constexpr auto kExeSpeechAsr     = "bin/signlang_eyes_edgeai_speech_asr";
-constexpr auto kExeEnvSoundDet   = "bin/signlang_eyes_edgeai_env_sound_det";
-constexpr auto kExeHandposeDet   = "bin/signlang_eyes_edgeai_handpose_det";
-constexpr auto kExeSignlangDet   = "bin/signlang_eyes_edgeai_signlang_det";
+constexpr auto kExeStateMachine  = "bin/state_machine";
+constexpr auto kExeAudioFrontend = "bin/audio_frontend";
+constexpr auto kExeVideoFrontend = "bin/video_frontend";
+constexpr auto kExeSpeechAsr     = "bin/speech_asr";
+constexpr auto kExeEnvSoundDet   = "bin/env_sound_det";
+constexpr auto kExeHandposeDet   = "bin/handpose_det";
+constexpr auto kExeSignlangDet   = "bin/signlang_det";
 
 constexpr std::array kIpcKeys = {
   "input_service",
