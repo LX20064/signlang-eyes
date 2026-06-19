@@ -1,0 +1,90 @@
+# audio_frontend — Audio Capture & Publishing
+
+## Overview
+
+The **audio_frontend** module captures raw PCM audio from an ALSA audio device (e.g., microphone) and publishes it as `AudioFrame` messages over an iceoryx2 publish-subscribe service. It supports optional single-channel Wiener (spectral subtraction) denoising, channel downmixing, and sample-rate conversion.
+
+- **Executable**: `signlang_eyes_edgeai_audio_frontend`
+- **IPC Pattern**: Publish-Subscribe (producer)
+- **Input**: ALSA capture device (PCM, 16-bit signed integer)
+- **Output**: `signlang::audio_frontend::AudioFrame` on iceoryx2
+
+## File Inventory
+
+| File | Description |
+|------|-------------|
+| `main.cpp` | Entry point; signal handling (SIGINT/SIGTERM), main loop |
+| `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
+| `alsa_capture_device.{cpp,hpp}` | ALSA PCM device capture wrapper |
+| `audio_format.hpp` | `AudioFormat`, `AudioFormatRequest` structs and validation constants |
+| `audio_frame.hpp` | `AudioFrame` IPC message definition (shared header) |
+| `audio_processor.{cpp,hpp}` | Channel mixing, sample-rate conversion, optional Wiener denoising via FFTW3f |
+| `audio_publisher.{cpp,hpp}` | iceoryx2 publish-subscribe publisher wrapper |
+
+## Command-Line Parameters
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| `--device` / `-d` | *(required)* | — | ALSA audio device name (e.g., `hw:0,0`, `default`) |
+| `--service` / `-s` | *(required)* | — | iceoryx2 publish-subscribe service name for audio output |
+| `--period-ms` / `-p` | `100` | `1–1000` | Audio publish period in milliseconds |
+| `--capture-rate` | (device default) | `8000–192000` | Requested ALSA capture sample rate in Hz |
+| `--capture-channels` | (device default) | `1–8` | Requested ALSA capture channel count |
+| `--publish-rate` | (matches capture) | `8000–192000` | Published audio sample rate in Hz (≤ capture rate) |
+| `--publish-channels` | (matches capture) | `1–8` | Published audio channel count (≤ capture channels) |
+| `--denoise` | `false` | — | Enable lightweight Wiener noise reduction (spectral subtraction) |
+| `--help` / `-h` | — | — | Print usage |
+
+## Technical Details
+
+### Audio Processing
+
+- **Format**: 16-bit signed integer PCM, mono by default
+- **Sample Rate**: Default 16 kHz; auto-negotiated with ALSA device if not specified
+- **Channel Mixing**: If capture and publish channel counts differ, channels are averaged down
+- **Publish Window**: Each published frame contains `sample_rate × period_ms / 1000` samples per channel
+
+### Wiener Denoising (`--denoise`)
+
+When enabled, the module applies single-channel spectral subtraction:
+- FFTW3f-based STFT (real-to-complex)
+- Noise profile estimation from silent frames
+- Wiener filter gain applied in frequency domain
+- Inverse FFT reconstruction
+
+### AudioFrame Metadata
+
+Each published `AudioFrame` carries:
+- Sample rate, channel count, bits per sample
+- Timestamp (nanoseconds) and sequence number
+- Publish period and frame sample count
+- Raw PCM sample data as a slice
+
+## Dependencies
+
+- **ALSA** (`libasound`): Audio capture
+- **FFTW3f**: Single-precision FFT (denoising only)
+- **iceoryx2**: Zero-copy IPC publishing
+
+## Usage Example
+
+```bash
+# Basic usage — capture from default mic, publish at 16 kHz mono
+./signlang_eyes_edgeai_audio_frontend \
+    --device hw:0,0 \
+    --service audio_capture
+
+# With custom format and denoising
+./signlang_eyes_edgeai_audio_frontend \
+    --device hw:0,0 \
+    --service audio_capture \
+    --capture-rate 48000 \
+    --capture-channels 2 \
+    --publish-rate 16000 \
+    --publish-channels 1 \
+    --period-ms 50 \
+    --denoise
+
+# List available devices
+arecord -l
+```
