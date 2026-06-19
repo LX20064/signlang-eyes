@@ -1,5 +1,5 @@
-#ifndef SIGNLANG_EYES_EDGEAI_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
-#define SIGNLANG_EYES_EDGEAI_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
+#ifndef SIGNLANG_EYES_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
+#define SIGNLANG_EYES_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
 
 #include "signlang_result.hpp"
 #include "handpose_det/handpose_frame.hpp"
@@ -128,4 +128,4 @@ auto IpcHandposeSubscriber::receive_latest(Handler&& handler) -> bool {
 
 } // namespace signlang::signlang_det
 
-#endif // SIGNLANG_EYES_EDGEAI_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
+#endif // SIGNLANG_EYES_SIGNLANG_DET_ICEORYX_GATEWAY_HPP

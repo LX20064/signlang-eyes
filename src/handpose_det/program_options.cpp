@@ -18,7 +18,7 @@ namespace signlang::handpose_det {
 
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_handpose_det",
+        "signlang_eyes_handpose_det",
         "Subscribe video frames from iceoryx2, run YOLOv8 hand pose on RKNN NPU, and publish hand keypoints."};
 
     options.add_options()("i,input-service", "Upstream video iceoryx2 service name",

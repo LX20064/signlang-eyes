@@ -1,5 +1,5 @@
-#ifndef SIGNLANG_EYES_EDGEAI_SPEECH_ASR_ICEORYX_GATEWAY_HPP
-#define SIGNLANG_EYES_EDGEAI_SPEECH_ASR_ICEORYX_GATEWAY_HPP
+#ifndef SIGNLANG_EYES_SPEECH_ASR_ICEORYX_GATEWAY_HPP
+#define SIGNLANG_EYES_SPEECH_ASR_ICEORYX_GATEWAY_HPP
 
 #include "audio_ring_buffer.hpp"
 #include "speech_asr_result.hpp"
@@ -94,4 +94,4 @@ namespace signlang::speech_asr {
 
 } // namespace signlang::speech_asr
 
-#endif // SIGNLANG_EYES_EDGEAI_SPEECH_ASR_ICEORYX_GATEWAY_HPP
+#endif // SIGNLANG_EYES_SPEECH_ASR_ICEORYX_GATEWAY_HPP

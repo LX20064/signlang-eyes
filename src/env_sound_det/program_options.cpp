@@ -62,7 +62,7 @@ namespace signlang::env_sound_det {
 
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_env_sound_det",
+        "signlang_eyes_env_sound_det",
         "Detect environmental sounds from an iceoryx2 audio stream with RKNN YAMNet and publish the result."};
 
     options.add_options()("i,input-service", "iceoryx2 audio input publish-subscribe service name",

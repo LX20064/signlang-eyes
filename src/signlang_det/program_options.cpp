@@ -35,7 +35,7 @@ auto parse_npu_core_mask(const std::string& core_str) -> rknn_core_mask {
 
 auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
   cxxopts::Options options{
-    "signlang_eyes_edgeai_signlang_det",
+    "signlang_eyes_signlang_det",
     "Subscribe handpose detections, extract temporal features, run BiLSTM+DTW sign language recognition"};
 
   options.add_options()

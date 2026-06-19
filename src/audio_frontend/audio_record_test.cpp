@@ -27,7 +27,7 @@ namespace {
 
   auto parse_options(int argc, char** argv) -> ProgramOptions {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_audio_frontend_record_test",
+        "signlang_eyes_audio_frontend_record_test",
         "Subscribe to an audio_frontend iceoryx2 service and record PCM16 audio to a WAV file."};
 
     options.add_options()("s,service", "iceoryx2 audio service name", cxxopts::value<std::string>())(

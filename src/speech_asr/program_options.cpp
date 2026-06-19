@@ -68,7 +68,7 @@ namespace signlang::speech_asr {
 
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_speech_asr",
+        "signlang_eyes_speech_asr",
         "Recognize speech from an iceoryx2 audio stream with RKNN Whisper and publish ASR results."};
 
     options.add_options()("i,input-service", "iceoryx2 audio input publish-subscribe service name",

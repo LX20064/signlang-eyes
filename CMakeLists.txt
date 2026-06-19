@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(signlang_eyes_edgeai LANGUAGES CXX C)
+project(signlang_eyes LANGUAGES CXX C)
 
 # This project ONLY supports aarch64 target platform
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -26,7 +26,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-pie")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-pie")
 
-option(SIGNLANG_ENABLE_TESTS "Build signlang-eyes-edgeai manual integration test executables" ON)
+option(SIGNLANG_ENABLE_TESTS "Build signlang-eyes manual integration test executables" ON)
 
 set(SIGNLANG_MODEL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/models CACHE PATH "Local root directory for model assets")
 

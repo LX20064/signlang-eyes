@@ -35,7 +35,7 @@ namespace {
 
   auto parse_options(int argc, char** argv) -> ProgramOptions {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_video_frontend_snapshot_test",
+        "signlang_eyes_video_frontend_snapshot_test",
         "Subscribe to a video_frontend iceoryx2 service and save the first received frame as an image."};
 
     options.add_options()("s,service", "iceoryx2 video service name", cxxopts::value<std::string>())(

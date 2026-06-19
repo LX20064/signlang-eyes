@@ -1,2 +1,2 @@
-# signlang-eyes-edgeai
-Edge AI solutions for sign language eyes in RKNN platform.
+# signlang-eyes
+AI-driven sign language eyes based on RKNN hardware platform.

@@ -52,7 +52,7 @@ namespace signlang::audio_frontend {
 
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
-        "signlang_eyes_edgeai_audio_frontend",
+        "signlang_eyes_audio_frontend",
         "Capture PCM audio from ALSA and publish it through an iceoryx2 publish-subscribe service."};
 
     options.add_options()("d,device", "ALSA audio device name", cxxopts::value<std::string>())(
