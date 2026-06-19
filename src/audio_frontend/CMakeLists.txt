@@ -2,6 +2,8 @@ add_executable(signlang_eyes_audio_frontend
         alsa_capture_device.cpp
         audio_processor.cpp
         audio_publisher.cpp
+        sound_source_blackboard.cpp
+        sound_source_localization.cpp
         program_options.cpp
         main.cpp)
 

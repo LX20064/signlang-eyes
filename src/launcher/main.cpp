@@ -29,6 +29,7 @@ constexpr auto kSignlangOutput  = "signlang_result";
 constexpr auto kStateEvent      = "app_state_event";
 constexpr auto kStateBlackboard = "app_state_blackboard";
 constexpr auto kStateControl    = "app_state_control";
+constexpr auto kAudioLocalizationBlackboard = "audio_source_localization";
 
 } // namespace signlang::launcher::ipc
 
@@ -53,6 +54,8 @@ constexpr std::array kIpcKeys = {
   "state-blackboard-service",
   "state_control_service",
   "state-control-service",
+  "localization_blackboard",
+  "localization-blackboard",
 };
 
 void warn_ipc_keys_in_table(const toml::table& tbl, const std::string& section_name) {
@@ -222,7 +225,11 @@ static auto build_state_machine_args(const toml::table& /* cfg */) -> std::vecto
 
 static auto build_audio_frontend_args(const toml::table& cfg) -> std::vector<std::string> {
   using namespace signlang::launcher::ipc;
-  std::vector<std::string> args = {kExeAudioFrontend, "--service", kAudioService};
+  std::vector<std::string> args = {
+    kExeAudioFrontend,
+    "--service", kAudioService,
+    "--localization-blackboard", kAudioLocalizationBlackboard,
+  };
 
   if (const auto* tbl = cfg["audio_frontend"].as_table()) {
     add_opt_str(args, "--device", opt_string(*tbl, "device"));
@@ -231,6 +238,8 @@ static auto build_audio_frontend_args(const toml::table& cfg) -> std::vector<std
     add_opt_int(args, "--publish-rate", opt_int(*tbl, "publish_rate"));
     add_opt_int(args, "--publish-channels", opt_int(*tbl, "publish_channels"));
     add_opt_int(args, "--period-ms", opt_int(*tbl, "period_ms"));
+    add_opt_double(args, "--localization-tdoa-weight", opt_double(*tbl, "localization_tdoa_weight"));
+    add_opt_double(args, "--localization-rms-weight", opt_double(*tbl, "localization_rms_weight"));
     add_opt_bool_true(args, "--denoise", opt_bool(*tbl, "denoise"));
   }
   return args;

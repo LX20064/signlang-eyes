@@ -6,6 +6,8 @@ capture_channels = 2               # Requested capture channel count
 # publish_rate = 16000             # Published sample rate in Hz
 # publish_channels = 1             # Published channel count
 # period_ms = 100                  # Publish period in milliseconds
+# localization_tdoa_weight = 0.7   # TDOA contribution to channel proximity score
+# localization_rms_weight = 0.3    # RMS energy contribution; must sum with TDOA weight to 1.0
 
 [video_frontend]
 device = "/dev/video21"            # V4L2 camera device path

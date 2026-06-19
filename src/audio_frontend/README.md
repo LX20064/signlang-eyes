@@ -33,6 +33,9 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device (
 | `--publish-rate` | (matches capture) | `8000–192000` | Published audio sample rate in Hz (≤ capture rate) |
 | `--publish-channels` | (matches capture) | `1–8` | Published audio channel count (≤ capture channels) |
 | `--denoise` | `false` | — | Enable lightweight Wiener noise reduction (spectral subtraction) |
+| `--localization-blackboard` | *(disabled)* | — | iceoryx2 blackboard service name for per-channel sound source proximity |
+| `--localization-tdoa-weight` | `0.7` | `0.0–1.0` | TDOA contribution to proximity fusion |
+| `--localization-rms-weight` | `0.3` | `0.0–1.0` | RMS energy contribution; must sum with TDOA weight to `1.0` |
 | `--help` / `-h` | — | — | Print usage |
 
 ## Technical Details
@@ -51,6 +54,21 @@ When enabled, the module applies single-channel spectral subtraction:
 - Noise profile estimation from silent frames
 - Wiener filter gain applied in frequency domain
 - Inverse FFT reconstruction
+
+### Sound Source Channel Proximity
+
+When `--localization-blackboard` is set, the module estimates which captured channel is closest to the active sound
+source before any downmixing or resampling. The result is written to a single-entry iceoryx2 blackboard using
+`SoundSourceLocalizationKey{.id = 0}`.
+
+- TDOA is estimated from pairwise normalized cross-correlation over the latest capture window.
+- RMS energy is used as an auxiliary score when correlation is weak or channels are close.
+- `--localization-tdoa-weight` and `--localization-rms-weight` configure fusion and must sum to `1.0`.
+- `proximity[ch]` is normalized to sum to `1.0` across active channels.
+- `strongest_channel` is the channel with the highest fused proximity score.
+- `valid == false` means the frame is too quiet or unusable.
+
+The launcher enables this automatically on the hardcoded `audio_source_localization` blackboard service.
 
 ### AudioFrame Metadata
 
@@ -83,7 +101,10 @@ Each published `AudioFrame` carries:
     --publish-rate 16000 \
     --publish-channels 1 \
     --period-ms 50 \
-    --denoise
+    --denoise \
+    --localization-blackboard audio_source_localization \
+    --localization-tdoa-weight 0.7 \
+    --localization-rms-weight 0.3
 
 # List available devices
 arecord -l
