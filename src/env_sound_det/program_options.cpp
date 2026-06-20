@@ -1,7 +1,5 @@
 #include "program_options.hpp"
 
-#include "env_sound_result.hpp"
-
 #include "cxxopts.hpp"
 
 #include <cstdint>
@@ -63,12 +61,10 @@ namespace signlang::env_sound_det {
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
         "signlang_eyes_env_sound_det",
-        "Detect environmental sounds from an iceoryx2 audio stream with RKNN YAMNet and publish the result."};
+        "Detect environmental sounds from an iceoryx2 audio stream with RKNN YAMNet and request alert states."};
 
     options.add_options()("i,input-service", "iceoryx2 audio input publish-subscribe service name",
                           cxxopts::value<std::string>())(
-        "o,output-service", "iceoryx2 detection result publish-subscribe service name",
-        cxxopts::value<std::string>())(
         "state-control-service", "iceoryx2 app state control request-response service name",
         cxxopts::value<std::string>())("m,model", "YAMNet RKNN model path",
                                        cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
@@ -78,7 +74,7 @@ namespace signlang::env_sound_det {
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultWindowMs)))(
         "overlap", "Overlap ratio between adjacent detection windows",
         cxxopts::value<double>()->default_value(std::to_string(kDefaultOverlapRatio)))(
-        "top-k", "Number of top classes to publish",
+        "top-k", "Number of top classes to evaluate for dangerous sound labels",
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kMaxTopClassCount)))(
         "poll-ms", "Subscriber polling sleep in milliseconds when no audio sample is ready",
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultPollPeriodMs)))(
@@ -94,10 +90,9 @@ namespace signlang::env_sound_det {
       return ProgramUsage{.text = options.help()};
     }
 
-    if (parsed_options.count("input-service") == 0 || parsed_options.count("output-service") == 0 ||
-        parsed_options.count("state-control-service") == 0) {
+    if (parsed_options.count("input-service") == 0 || parsed_options.count("state-control-service") == 0) {
       throw std::runtime_error(
-          "--input-service, --output-service, and --state-control-service are required.\n\n" + options.help());
+          "--input-service and --state-control-service are required.\n\n" + options.help());
     }
 
     const auto window_ms = parsed_options["window-ms"].as<std::uint32_t>();
@@ -128,7 +123,6 @@ namespace signlang::env_sound_det {
 
     return ProgramOptionsParseResult{ProgramOptions{
         .audio_service_name = parsed_options["input-service"].as<std::string>(),
-        .result_service_name = parsed_options["output-service"].as<std::string>(),
         .state_control_service_name = parsed_options["state-control-service"].as<std::string>(),
         .model_path = parsed_options["model"].as<std::string>(),
         .class_map_path = parsed_options["class-map"].as<std::string>(),

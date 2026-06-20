@@ -36,7 +36,6 @@ See `conf/conf.toml` for the default configuration with all available keys docum
 audio_capture          → audio_frontend → speech_asr, env_sound_det
 video_capture          → video_frontend → handpose_det
 speech_asr_result      ← speech_asr
-env_sound_result       ← env_sound_det
 handpose_result        ← handpose_det → signlang_det
 signlang_result        ← signlang_det
 app_state_event        ↔ state_machine → speech_asr, handpose_det, signlang_det

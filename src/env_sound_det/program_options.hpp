@@ -3,15 +3,27 @@
 
 #include "rknn_api.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <variant>
 
 namespace signlang::env_sound_det {
 
+  constexpr std::uint32_t kYamnetSampleRateHz = 16000;
+  constexpr std::uint32_t kDefaultWindowMs = 3000;
+  constexpr double kDefaultOverlapRatio = 0.2;
+  constexpr std::uint32_t kMaxTopClassCount = 5;
+  constexpr std::uint32_t kMaxClassLabelLength = 128;
+
+  struct EnvSoundClassScore {
+    std::uint32_t class_index;
+    float score;
+    std::array<char, kMaxClassLabelLength> label;
+  };
+
   struct ProgramOptions {
     std::string audio_service_name;
-    std::string result_service_name;
     std::string state_control_service_name;
     std::string model_path;
     std::string class_map_path;

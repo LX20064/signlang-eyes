@@ -2,12 +2,12 @@
 
 ## Overview
 
-The **env_sound_det** module performs real-time environmental sound classification using Google's YAMNet (MobileNetV1-based) model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding window, runs inference, and publishes the top-K class scores. It uses iceoryx2 Request-Response for state control, including special support for horn/dangerous-sound state reporting.
+The **env_sound_det** module performs real-time environmental sound classification using Google's YAMNet (MobileNetV1-based) model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding window, runs inference, and requests alert-state changes for configured horn/dangerous-sound labels.
 
 - **Executable**: `env_sound_det` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (subscriber + publisher) + Request-Response (state control)
+- **IPC Pattern**: Publish-Subscribe (audio subscriber) + Request-Response (state control)
 - **Input**: `signlang::audio_frontend::AudioFrame` from iceoryx2
-- **Output**: `signlang::env_sound_det::EnvSoundDetectionResult` on iceoryx2
+- **Output**: `DangerousSound` state-control requests when configured horn labels are detected
 - **Model**: YAMNet (521-class environmental sound classifier, RKNN-accelerated)
 
 ## File Inventory
@@ -17,9 +17,8 @@ The **env_sound_det** module performs real-time environmental sound classificati
 | `main.cpp` | Entry point; signal handling, main loop |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `yamnet_model.{cpp,hpp}` | YAMNet RKNN model: load, inference, score averaging, Top-K selection |
-| `iceoryx_gateway.{cpp,hpp}` | iceoryx2 subscriber (audio), publisher (results), request-response (state control) |
+| `iceoryx_gateway.{cpp,hpp}` | iceoryx2 subscriber (audio) and request-response client (state control) |
 | `audio_ring_buffer.{cpp,hpp}` | Thread-safe circular buffer for audio window accumulation |
-| `env_sound_result.hpp` | `EnvSoundDetectionResult` and `EnvSoundClassScore` IPC message definitions |
 
 ## Command-Line Parameters
 
@@ -28,7 +27,6 @@ The **env_sound_det** module performs real-time environmental sound classificati
 | Parameter | Description |
 |-----------|-------------|
 | `--input-service` / `-i` | iceoryx2 audio input publish-subscribe service name |
-| `--output-service` / `-o` | iceoryx2 detection result output service name |
 | `--state-control-service` | iceoryx2 app state control request-response service name |
 
 ### Model Paths
@@ -44,7 +42,7 @@ The **env_sound_det** module performs real-time environmental sound classificati
 |-----------|---------|-------|-------------|
 | `--window-ms` / `-w` | `3000` | `100–60000` | Detection window duration in milliseconds |
 | `--overlap` | `0.2` | `[0.0, 1.0)` | Overlap ratio between adjacent windows |
-| `--top-k` | `5` | `1–5` | Number of highest-scoring classes to publish |
+| `--top-k` | `5` | `1–5` | Number of highest-scoring classes to evaluate for dangerous sound labels |
 
 ### Performance
 
@@ -97,7 +95,6 @@ See `models/yamnet/yamnet_class_map.txt` for all 521 classes.
 ```bash
 ./env_sound_det \
     --input-service audio_capture \
-    --output-service env_sound_result \
     --state-control-service app_state_control \
     --window-ms 3000 \
     --overlap 0.2 \

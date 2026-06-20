@@ -2,7 +2,6 @@
 #define SIGNLANG_EYES_ENV_SOUND_DET_YAMNET_MODEL_HPP
 
 #include "audio_ring_buffer.hpp"
-#include "env_sound_result.hpp"
 #include "program_options.hpp"
 
 #include "rknn_api.h"

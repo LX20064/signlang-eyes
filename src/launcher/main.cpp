@@ -23,7 +23,6 @@ namespace signlang::launcher::ipc {
 constexpr auto kAudioService    = "audio_capture";
 constexpr auto kVideoService    = "video_capture";
 constexpr auto kSpeechAsrOutput = "speech_asr_result";
-constexpr auto kEnvSoundOutput  = "env_sound_result";
 constexpr auto kHandposeOutput  = "handpose_result";
 constexpr auto kSignlangOutput  = "signlang_result";
 constexpr auto kStateEvent      = "app_state_event";
@@ -294,7 +293,6 @@ static auto build_env_sound_det_args(const toml::table& cfg) -> std::vector<std:
   std::vector<std::string> args = {
     kExeEnvSoundDet,
     "--input-service",         kAudioService,
-    "--output-service",        kEnvSoundOutput,
     "--state-control-service", kStateControl,
   };
 
