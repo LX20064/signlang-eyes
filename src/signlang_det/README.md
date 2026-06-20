@@ -30,8 +30,16 @@ The **signlang_det** module performs real-time dual-hand sign language recogniti
 |-----------|-------------|
 | `--input-service` / `-i` | iceoryx2 handpose detection input service name |
 | `--output-service` / `-o` | iceoryx2 sign language recognition result output service name |
+
+### State Gate (Optional)
+
+| Parameter | Description |
+|-----------|-------------|
 | `--state-event-service` | iceoryx2 event service for global app state change notifications |
 | `--state-blackboard-service` | iceoryx2 blackboard service for global app state storage |
+
+When both state gate services are provided, sign language recognition reads the current blackboard state at startup and
+follows subsequent app state events. Without state gate services, it stays enabled.
 
 ### Model Paths
 

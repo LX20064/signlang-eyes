@@ -136,16 +136,25 @@ auto main(int argc, char** argv) -> int {
       try {
         WhisperModel model{options};
         IpcResultPublisher result_publisher{options.result_service_name};
-        IpcAsrStateMonitor state_monitor{options.state_event_service_name, options.state_blackboard_service_name};
+        auto state_monitor = std::optional<IpcAsrStateMonitor>{};
+        if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
+          state_monitor.emplace(options.state_event_service_name.value(), options.state_blackboard_service_name.value());
+        }
+        auto gate_enabled = [&]() { return !state_monitor.has_value() || state_monitor->is_enabled(); };
+        auto poll_gate = [&]() {
+          if (state_monitor.has_value()) {
+            state_monitor->try_wait_for_state_change();
+          }
+        };
         AudioWindow audio_window;
         std::optional<std::uint64_t> next_window_start_sample;
         std::uint64_t result_sequence_number = 0;
 
         while (audio_buffer.wait_for_window(next_window_start_sample, window_sample_count, hop_sample_count,
                                             should_stop, audio_window)) {
-          state_monitor.try_wait_for_state_change();
+          poll_gate();
 
-          if (state_monitor.is_enabled()) {
+          if (gate_enabled()) {
             const auto inference_result = model.infer(audio_window, options.language);
 
             SpeechAsrResult result{};
@@ -172,11 +181,11 @@ auto main(int argc, char** argv) -> int {
             next_window_start_sample = audio_window.start_sample_index + hop_sample_count;
           } else {
             // Poll for state change with stop check to avoid hang on shutdown
-            while (!should_stop.load() && !state_monitor.is_enabled()) {
-              state_monitor.try_wait_for_state_change();
-	              if (!state_monitor.is_enabled()) {
-	                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	              }
+            while (!should_stop.load() && !gate_enabled()) {
+              poll_gate();
+              if (!gate_enabled()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+              }
             }
             // Discard stale audio accumulated during disabled period
             audio_buffer.clear();

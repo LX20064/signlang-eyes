@@ -4,6 +4,7 @@
 #include "handpose_frame.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -19,8 +20,8 @@ namespace signlang::handpose_det {
   struct ProgramOptions {
     std::string input_service_name;
     std::string output_service_name;
-    std::string state_event_service_name;
-    std::string state_blackboard_service_name;
+    std::optional<std::string> state_event_service_name;
+    std::optional<std::string> state_blackboard_service_name;
     std::string model_path;
     std::string rknn_runtime_library_path;
     float confidence_threshold;

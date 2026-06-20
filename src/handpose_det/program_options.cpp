@@ -48,10 +48,15 @@ namespace signlang::handpose_det {
       return ProgramUsage{.text = options.help()};
     }
 
-    if (parsed_options.count("input-service") == 0 || parsed_options.count("output-service") == 0 ||
-        parsed_options.count("state-event-service") == 0 || parsed_options.count("state-blackboard-service") == 0) {
-      throw std::runtime_error("Options --input-service, --output-service, --state-event-service, and "
-                               "--state-blackboard-service are required.\n\n" +
+    if (parsed_options.count("input-service") == 0 || parsed_options.count("output-service") == 0) {
+      throw std::runtime_error("Options --input-service and --output-service are required.\n\n" + options.help());
+    }
+
+    const auto has_state_event_service = parsed_options.count("state-event-service") != 0;
+    const auto has_state_blackboard_service = parsed_options.count("state-blackboard-service") != 0;
+    if (has_state_event_service != has_state_blackboard_service) {
+      throw std::runtime_error("Options --state-event-service and --state-blackboard-service must be provided "
+                               "together.\n\n" +
                                options.help());
     }
 
@@ -78,8 +83,13 @@ namespace signlang::handpose_det {
     return ProgramOptionsParseResult{ProgramOptions{
         .input_service_name = parsed_options["input-service"].as<std::string>(),
         .output_service_name = parsed_options["output-service"].as<std::string>(),
-        .state_event_service_name = parsed_options["state-event-service"].as<std::string>(),
-        .state_blackboard_service_name = parsed_options["state-blackboard-service"].as<std::string>(),
+        .state_event_service_name =
+            has_state_event_service ? std::optional<std::string>{parsed_options["state-event-service"].as<std::string>()}
+                                    : std::nullopt,
+        .state_blackboard_service_name =
+            has_state_blackboard_service
+                ? std::optional<std::string>{parsed_options["state-blackboard-service"].as<std::string>()}
+                : std::nullopt,
         .model_path = parsed_options["model"].as<std::string>(),
         .rknn_runtime_library_path = parsed_options["rknn-runtime"].as<std::string>(),
         .confidence_threshold = confidence_threshold,

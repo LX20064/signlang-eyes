@@ -29,6 +29,11 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 |-----------|-------------|
 | `--input-service` / `-i` | iceoryx2 audio input publish-subscribe service name |
 | `--output-service` / `-o` | iceoryx2 ASR result output service name |
+
+### State Gate (Optional)
+
+| Parameter | Description |
+|-----------|-------------|
 | `--state-event-service` | iceoryx2 event service name for global app state change notifications |
 | `--state-blackboard-service` | iceoryx2 blackboard service name for global app state storage |
 
@@ -80,9 +85,11 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 
 ### State Control
 
-The module uses iceoryx2 Event + Blackboard pattern for enable/disable control:
+When both state gate services are provided, the module reads the current blackboard state at startup and uses the
+iceoryx2 Event + Blackboard pattern for enable/disable control:
 - When **disabled**: Polls for state changes and sleeps briefly between checks
 - When **enabled**: Non-blocking event check before each inference cycle
+- Without state gate services: Always enabled
 - Language is set at startup via `--language` flag
 
 ## Usage Example

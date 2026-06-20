@@ -4,6 +4,7 @@
 #include "rknn_api.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -24,8 +25,8 @@ constexpr auto kDefaultConfidenceMargin = float{0.1F};
 struct ProgramOptions {
   std::string input_service_name;
   std::string output_service_name;
-  std::string state_event_service_name;
-  std::string state_blackboard_service_name;
+  std::optional<std::string> state_event_service_name;
+  std::optional<std::string> state_blackboard_service_name;
   std::string model_path;
   std::string label_map_path;
   std::string prototypes_path;

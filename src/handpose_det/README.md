@@ -30,8 +30,16 @@ The **handpose_det** module performs real-time hand detection and 21-keypoint lo
 |-----------|-------------|
 | `--input-service` / `-i` | iceoryx2 video input publish-subscribe service name |
 | `--output-service` / `-o` | iceoryx2 handpose detection result output service name |
+
+### State Gate (Optional)
+
+| Parameter | Description |
+|-----------|-------------|
 | `--state-event-service` | iceoryx2 event service for global app state change notifications |
 | `--state-blackboard-service` | iceoryx2 blackboard service for global app state storage |
+
+When both state gate services are provided, hand pose detection reads the current blackboard state at startup and
+follows subsequent app state events. Without state gate services, it stays enabled.
 
 ### Model Paths
 

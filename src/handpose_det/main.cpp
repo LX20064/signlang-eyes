@@ -7,6 +7,7 @@
 #include <csignal>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <variant>
 
@@ -45,18 +46,27 @@ auto main(int argc, char** argv) -> int {
     HandPoseModel model{options.model_path, options.rknn_runtime_library_path, options};
     HandPoseTransport transport{options.input_service_name, options.output_service_name, options.subscriber_buffer_size,
                                 options.max_detections};
-    IpcHandPoseStateMonitor state_monitor{options.state_event_service_name, options.state_blackboard_service_name};
+    auto state_monitor = std::optional<IpcHandPoseStateMonitor>{};
+    if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
+      state_monitor.emplace(options.state_event_service_name.value(), options.state_blackboard_service_name.value());
+    }
+    auto gate_enabled = [&]() { return !state_monitor.has_value() || state_monitor->is_enabled(); };
+    auto poll_gate = [&]() {
+      if (state_monitor.has_value()) {
+        state_monitor->try_wait_for_state_change();
+      }
+    };
 
     std::uint64_t sequence_number = 0;
     std::array<HandPoseDetection, signlang::handpose_det::kMaxHandPoseDetections> detection_buffer{};
     while (g_should_stop == 0 && transport.wait_for_work()) {
-      state_monitor.try_wait_for_state_change();
+      poll_gate();
 
-      if (!state_monitor.is_enabled()) {
+      if (!gate_enabled()) {
         // Poll for state change with stop check to avoid hang on shutdown
-        while (g_should_stop == 0 && !state_monitor.is_enabled()) {
-          state_monitor.try_wait_for_state_change();
-          if (!state_monitor.is_enabled()) {
+        while (g_should_stop == 0 && !gate_enabled()) {
+          poll_gate();
+          if (!gate_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
           }
         }

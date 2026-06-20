@@ -11,6 +11,7 @@
 #include <csignal>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <variant>
 
@@ -93,8 +94,16 @@ namespace {
                                options.npu_core_mask,
                                options.motion_weight, options.dtw_window_ratio};
     auto publisher = IpcSignlangPublisher{options.output_service_name};
-    auto state_monitor = IpcSignlangDetStateMonitor{options.state_event_service_name,
-                                                     options.state_blackboard_service_name};
+    auto state_monitor = std::optional<IpcSignlangDetStateMonitor>{};
+    if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
+      state_monitor.emplace(options.state_event_service_name.value(), options.state_blackboard_service_name.value());
+    }
+    auto gate_enabled = [&]() { return !state_monitor.has_value() || state_monitor->is_enabled(); };
+    auto poll_gate = [&]() {
+      if (state_monitor.has_value()) {
+        state_monitor->try_wait_for_state_change();
+      }
+    };
 
     const auto hop_frames = std::max<std::uint32_t>(
       1, static_cast<std::uint32_t>(options.sequence_length * (1.0f - options.overlap_ratio)));
@@ -102,13 +111,13 @@ namespace {
 
     while (!should_stop) {
       // Check for state changes before waiting for buffer
-      state_monitor.try_wait_for_state_change();
+      poll_gate();
 
-      if (!state_monitor.is_enabled()) {
+      if (!gate_enabled()) {
         // Poll for state change with stop check to avoid hang on shutdown
-        while (!should_stop.load() && !state_monitor.is_enabled()) {
-          state_monitor.try_wait_for_state_change();
-          if (!state_monitor.is_enabled()) {
+        while (!should_stop.load() && !gate_enabled()) {
+          poll_gate();
+          if (!gate_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
           }
         }
