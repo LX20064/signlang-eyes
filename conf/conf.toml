@@ -1,5 +1,5 @@
 [audio_frontend]
-device = "default"                 # ALSA device name (e.g. "hw:0,0", "default")
+device = "hw:2,0"                  # ALSA device name (e.g. "hw:0,0", "default")
 denoise = true                     # Enable Wiener noise reduction
 capture_rate = 16000               # Requested capture sample rate in Hz
 capture_channels = 2               # Requested capture channel count
