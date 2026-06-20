@@ -240,7 +240,6 @@ static auto build_audio_frontend_args(const toml::table& cfg) -> std::vector<std
     add_opt_int(args, "--period-ms", opt_int(*tbl, "period_ms"));
     add_opt_double(args, "--localization-tdoa-weight", opt_double(*tbl, "localization_tdoa_weight"));
     add_opt_double(args, "--localization-rms-weight", opt_double(*tbl, "localization_rms_weight"));
-    add_opt_bool_true(args, "--denoise", opt_bool(*tbl, "denoise"));
   }
   return args;
 }

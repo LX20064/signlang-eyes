@@ -1,6 +1,5 @@
 [audio_frontend]
 device = "hw:2,0"                  # ALSA device name (e.g. "hw:0,0", "default")
-denoise = true                     # Enable Wiener noise reduction
 capture_rate = 16000               # Requested capture sample rate in Hz
 capture_channels = 2               # Requested capture channel count
 # publish_rate = 16000             # Published sample rate in Hz

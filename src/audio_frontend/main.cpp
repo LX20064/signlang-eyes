@@ -72,7 +72,7 @@ auto main(int argc, char** argv) -> int {
     };
     validate_publish_format(capture_format, publish_format);
 
-    AudioProcessor audio_processor{capture_format, publish_format, options.publish_period_ms, options.enable_denoise};
+    AudioProcessor audio_processor{capture_format, publish_format, options.publish_period_ms};
     AudioPublisher publisher{options.service_name};
     SoundSourceLocalizer sound_source_localizer{options.localization_tdoa_weight, options.localization_rms_weight};
     std::unique_ptr<SoundSourceBlackboardPublisher> sound_source_blackboard;

@@ -17,7 +17,6 @@ target_link_libraries(signlang_eyes_audio_frontend PRIVATE
         cxxopts::cxxopts
         iceoryx2-cxx::shared-lib-cxx
         ALSA::ALSA
-        fftw3f
         m)
 
 install(TARGETS signlang_eyes_audio_frontend DESTINATION bin)

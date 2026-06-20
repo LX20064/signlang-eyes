@@ -17,7 +17,6 @@ namespace signlang::audio_frontend {
     float localization_tdoa_weight;
     float localization_rms_weight;
     std::uint32_t publish_period_ms;
-    bool enable_denoise;
     AudioFormatRequest capture_format;
     AudioFormatRequest publish_format;
   };

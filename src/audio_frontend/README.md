@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **audio_frontend** module captures raw PCM audio from an ALSA audio device (e.g., microphone) and publishes it as `AudioFrame` messages over an iceoryx2 publish-subscribe service. It supports optional single-channel Wiener (spectral subtraction) denoising, channel downmixing, and sample-rate conversion.
+The **audio_frontend** module captures raw PCM audio from an ALSA audio device (e.g., microphone) and publishes it as `AudioFrame` messages over an iceoryx2 publish-subscribe service. It supports channel downmixing, sample-rate conversion, and optional sound source localization.
 
 - **Executable**: `audio_frontend` (installed under `bin/`)
 - **IPC Pattern**: Publish-Subscribe (producer)
@@ -18,7 +18,7 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device (
 | `alsa_capture_device.{cpp,hpp}` | ALSA PCM device capture wrapper |
 | `audio_format.hpp` | `AudioFormat`, `AudioFormatRequest` structs and validation constants |
 | `audio_frame.hpp` | `AudioFrame` IPC message definition (shared header) |
-| `audio_processor.{cpp,hpp}` | Channel mixing, sample-rate conversion, optional Wiener denoising via FFTW3f |
+| `audio_processor.{cpp,hpp}` | Channel mixing and sample-rate conversion |
 | `audio_publisher.{cpp,hpp}` | iceoryx2 publish-subscribe publisher wrapper |
 
 ## Command-Line Parameters
@@ -32,7 +32,6 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device (
 | `--capture-channels` | (device default) | `1–8` | Requested ALSA capture channel count |
 | `--publish-rate` | (matches capture) | `8000–192000` | Published audio sample rate in Hz (≤ capture rate) |
 | `--publish-channels` | (matches capture) | `1–8` | Published audio channel count (≤ capture channels) |
-| `--denoise` | `false` | — | Enable lightweight Wiener noise reduction (spectral subtraction) |
 | `--localization-blackboard` | *(disabled)* | — | iceoryx2 blackboard service name for per-channel sound source proximity |
 | `--localization-tdoa-weight` | `0.7` | `0.0–1.0` | TDOA contribution to proximity fusion |
 | `--localization-rms-weight` | `0.3` | `0.0–1.0` | RMS energy contribution; must sum with TDOA weight to `1.0` |
@@ -46,14 +45,6 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device (
 - **Sample Rate**: Default 16 kHz; auto-negotiated with ALSA device if not specified
 - **Channel Mixing**: If capture and publish channel counts differ, channels are averaged down
 - **Publish Window**: Each published frame contains `sample_rate × period_ms / 1000` samples per channel
-
-### Wiener Denoising (`--denoise`)
-
-When enabled, the module applies single-channel spectral subtraction:
-- FFTW3f-based STFT (real-to-complex)
-- Noise profile estimation from silent frames
-- Wiener filter gain applied in frequency domain
-- Inverse FFT reconstruction
 
 ### Sound Source Channel Proximity
 
@@ -81,7 +72,6 @@ Each published `AudioFrame` carries:
 ## Dependencies
 
 - **ALSA** (`libasound`): Audio capture
-- **FFTW3f**: Single-precision FFT (denoising only)
 - **iceoryx2**: Zero-copy IPC publishing
 
 ## Usage Example
@@ -92,7 +82,7 @@ Each published `AudioFrame` carries:
     --device hw:0,0 \
     --service audio_capture
 
-# With custom format and denoising
+# With custom format and localization
 ./audio_frontend \
     --device hw:0,0 \
     --service audio_capture \
@@ -101,7 +91,6 @@ Each published `AudioFrame` carries:
     --publish-rate 16000 \
     --publish-channels 1 \
     --period-ms 50 \
-    --denoise \
     --localization-blackboard audio_source_localization \
     --localization-tdoa-weight 0.7 \
     --localization-rms-weight 0.3

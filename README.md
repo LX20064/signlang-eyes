@@ -19,7 +19,7 @@ Runtime modules installed under `bin/`:
 | Module | Purpose |
 |--------|---------|
 | `state_machine` | Publishes the global app state and accepts state-control requests |
-| `audio_frontend` | Captures ALSA PCM audio, optional denoise/localization, publishes `AudioFrame` |
+| `audio_frontend` | Captures ALSA PCM audio, optional localization, publishes `AudioFrame` |
 | `video_frontend` | Captures V4L2 YUYV/MJPEG frames and publishes video byte slices |
 | `speech_asr` | Runs Whisper ASR when the app state is `Asr` |
 | `env_sound_det` | Runs YAMNet and requests `DangerousSound` for configured horn labels |
@@ -62,7 +62,7 @@ The root CMake project expects the vendored dependencies under `third_party/`:
 
 - iceoryx2 C++ libraries
 - RKNN runtime headers and `librknnrt.so`
-- FFTW3f for ASR/audio processing
+- FFTW3f for ASR audio processing
 - cxxopts and toml++ headers
 - ALSA and pthreads from the target system
 
