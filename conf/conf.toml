@@ -10,10 +10,10 @@ capture_channels = 2               # Requested capture channel count
 
 [video_frontend]
 device = "/dev/video21"            # V4L2 camera device path
+output_width = 640                 # Published output width
+output_height = 480                # Published output height
 # capture_width = 1920             # Requested capture width
 # capture_height = 1080            # Requested capture height
-# output_width = 640               # Published output width
-# output_height = 480              # Published output height
 # fps = 30                         # Requested frame rate
 
 [speech_asr]
