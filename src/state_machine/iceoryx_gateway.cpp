@@ -1,6 +1,7 @@
 #include "iceoryx_gateway.hpp"
 
 #include "iox2/service_builder_blackboard_error.hpp"
+#include "spdlog/spdlog.h"
 
 #include <stdexcept>
 #include <string>
@@ -37,6 +38,7 @@ namespace signlang::state_machine {
       return;
     }
 
+    spdlog::info("State transition: {} -> {}", app_state_name(current_state_), app_state_name(state));
     current_state_ = state;
     publish_current_state();
   }

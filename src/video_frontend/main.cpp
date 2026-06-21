@@ -57,9 +57,24 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
+    spdlog::info("Starting video frontend");
+    spdlog::info("Device: {}", options.camera_device_name);
+    if (options.capture_format.width.has_value() && options.capture_format.height.has_value()) {
+      spdlog::info("Requested capture: {}x{} @ {}fps",
+                   options.capture_format.width.value(), options.capture_format.height.value(), options.fps);
+    }
+    if (options.output_format.width.has_value() && options.output_format.height.has_value()) {
+      spdlog::info("Requested output: {}x{}", options.output_format.width.value(), options.output_format.height.value());
+    }
+
     V4l2CaptureDevice capture_device{options.camera_device_name, options.capture_format, options.fps};
     const auto capture_format = capture_device.format();
+    spdlog::info("Actual capture: {}x{} @ {}fps",
+                 capture_format.width, capture_format.height, capture_device.fps());
+
     const auto output_format = resolve_output_format(capture_format, options.output_format);
+    spdlog::info("Actual output: {}x{}", output_format.width, output_format.height);
+
     VideoProcessor video_processor{capture_format, output_format};
     VideoPublisher publisher{options.service_name,
                              video_processor.max_output_size_bytes(capture_device.max_frame_size_bytes())};

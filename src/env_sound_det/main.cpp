@@ -81,6 +81,10 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
+    spdlog::info("Starting environment sound detector");
+    spdlog::info("Model: {}", options.model_path);
+    spdlog::info("Window: {}ms, overlap: {:.1f}%", options.window_ms, options.overlap_ratio * 100);
+
     const auto window_sample_count = samples_for_window_ms(kYamnetSampleRateHz, options.window_ms);
     const auto hop_sample_count = hop_samples_for_overlap(window_sample_count, options.overlap_ratio);
     if (window_sample_count == 0) {
@@ -121,8 +125,11 @@ auto main(int argc, char** argv) -> int {
 
     std::thread detector_thread{[&] {
       try {
+        spdlog::info("Initializing YAMNet model");
         YamnetModel model{options.model_path, options.class_map_path, options.npu_core_mask, options.rknn_priority_flag,
                           options.top_k};
+        spdlog::info("YAMNet model loaded successfully");
+
         IpcStateControlClient state_control_client{options.state_control_service_name};
         AudioWindow audio_window;
         std::optional<std::uint64_t> next_window_start_sample;
@@ -132,6 +139,7 @@ auto main(int argc, char** argv) -> int {
           const auto inference_result = model.infer(audio_window);
 
           if (has_dangerous_sound(inference_result)) {
+            spdlog::warn("Dangerous sound detected!");
             state_control_client.enter_dangerous_sound_state();
           }
           next_window_start_sample = audio_window.start_sample_index + hop_sample_count;

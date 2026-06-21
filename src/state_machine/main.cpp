@@ -48,6 +48,11 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
+    spdlog::info("Starting state machine");
+    spdlog::info("State event service: {}", options.state_event_service_name);
+    spdlog::info("State blackboard service: {}", options.state_blackboard_service_name);
+    spdlog::info("State control service: {}", options.state_control_service_name);
+
     StateController state_controller{AppState::Normal};
     IpcStatePublisher state_publisher{options.state_event_service_name, options.state_blackboard_service_name,
                                       state_controller.current_published_state()};
@@ -58,6 +63,7 @@ auto main(int argc, char** argv) -> int {
     while (g_should_stop == 0) {
       const auto now = StateController::Clock::now();
       if (state_controller.expire_special_state(now)) {
+        spdlog::info("Special state expired, returning to normal");
         state_publisher.set_state(state_controller.current_published_state());
       }
 

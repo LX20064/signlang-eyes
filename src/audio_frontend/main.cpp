@@ -68,14 +68,25 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
+    spdlog::info("Starting audio frontend");
+    spdlog::info("Device: {}", options.audio_device_name);
+    if (options.capture_format.sample_rate_hz.has_value() && options.capture_format.channel_count.has_value()) {
+      spdlog::info("Requested capture: {}Hz, {} channels",
+                   options.capture_format.sample_rate_hz.value(), options.capture_format.channel_count.value());
+    }
+
     AlsaCaptureDevice capture_device{options.audio_device_name, options.capture_format, options.publish_period_ms};
     const auto capture_format = capture_device.format();
+    spdlog::info("Actual capture: {}Hz, {} channels, period: {}ms",
+                 capture_format.sample_rate_hz, capture_format.channel_count, options.publish_period_ms);
+
     const AudioFormat publish_format{
         .sample_rate_hz =
             options.publish_format.sample_rate_hz.value_or(signlang::audio_frontend::kDefaultSampleRateHz),
         .channel_count = options.publish_format.channel_count.value_or(signlang::audio_frontend::kDefaultChannelCount),
     };
     validate_publish_format(capture_format, publish_format);
+    spdlog::info("Output format: {}Hz, {} channels", publish_format.sample_rate_hz, publish_format.channel_count);
 
     AudioProcessor audio_processor{capture_format, publish_format, options.publish_period_ms};
     AudioPublisher publisher{options.service_name};

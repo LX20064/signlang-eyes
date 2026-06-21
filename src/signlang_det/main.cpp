@@ -95,6 +95,8 @@ namespace {
                                options.prototypes_path,
                                options.npu_core_mask,
                                options.motion_weight, options.dtw_window_ratio};
+    spdlog::info("Sign language model loaded successfully");
+
     auto publisher = IpcSignlangPublisher{options.output_service_name};
     auto state_monitor = std::optional<IpcSignlangDetStateMonitor>{};
     if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
@@ -155,6 +157,8 @@ namespace {
         }
 
         const auto result = build_result(*window, inference_result, options, model);
+        spdlog::info("Sign language detected: {} (confidence: {:.2f})",
+                     model.get_gesture_name(inference_result.gesture_id), inference_result.confidence);
         publisher.publish(result);
 
         next_window_end_seq = window_end_seq + hop_frames;
@@ -186,6 +190,10 @@ auto main(int argc, char** argv) -> int {
     const auto options = std::get<ProgramOptions>(parse_result);
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
+
+    spdlog::info("Starting sign language detector");
+    spdlog::info("Model: {}", options.model_path);
+    spdlog::info("Sequence length: {}, overlap ratio: {:.1f}%", options.sequence_length, options.overlap_ratio * 100);
 
     const auto buffer_capacity = compute_buffer_capacity(
       options.sequence_length, options.overlap_ratio);

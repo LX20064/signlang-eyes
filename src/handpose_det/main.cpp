@@ -48,7 +48,12 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
+    spdlog::info("Starting hand pose detector");
+    spdlog::info("Model: {}", options.model_path);
+
     HandPoseModel model{options.model_path, options};
+    spdlog::info("Hand pose model loaded successfully");
+
     HandPoseTransport transport{options.input_service_name, options.output_service_name, options.subscriber_buffer_size,
                                 options.max_detections};
     auto state_monitor = std::optional<IpcHandPoseStateMonitor>{};

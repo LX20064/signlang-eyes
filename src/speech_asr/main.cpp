@@ -76,6 +76,7 @@ auto main(int argc, char** argv) -> int {
   using signlang::common::AudioWindow;
   using signlang::common::hop_samples_for_overlap;
   using signlang::common::samples_for_window_ms;
+  using signlang::speech_asr::AsrLanguage;
   using signlang::speech_asr::IpcAudioSubscriber;
   using signlang::speech_asr::IpcAsrStateMonitor;
   using signlang::speech_asr::IpcResultPublisher;
@@ -98,6 +99,12 @@ auto main(int argc, char** argv) -> int {
     const auto options = std::get<ProgramOptions>(parse_result);
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
+
+    spdlog::info("Starting speech ASR");
+    spdlog::info("Language: {}", options.language == AsrLanguage::English ? "English" : "Chinese");
+    spdlog::info("Encoder model: {}", options.encoder_model_path);
+    spdlog::info("Decoder model: {}", options.decoder_model_path);
+    spdlog::info("Window: {}ms, overlap: {:.1f}%", options.window_ms, options.overlap_ratio * 100);
 
     const auto window_sample_count = samples_for_window_ms(kWhisperSampleRateHz, options.window_ms);
     const auto hop_sample_count = hop_samples_for_overlap(window_sample_count, options.overlap_ratio);
@@ -139,7 +146,10 @@ auto main(int argc, char** argv) -> int {
 
     std::thread detector_thread{[&] {
       try {
+        spdlog::info("Initializing Whisper model");
         WhisperModel model{options};
+        spdlog::info("Whisper model loaded successfully");
+
         IpcResultPublisher result_publisher{options.result_service_name};
         auto state_monitor = std::optional<IpcAsrStateMonitor>{};
         if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
@@ -161,6 +171,10 @@ auto main(int argc, char** argv) -> int {
 
           if (gate_enabled()) {
             const auto inference_result = model.infer(audio_window, options.language);
+
+            if (!inference_result.transcript.empty()) {
+              spdlog::info("Transcript: {}", inference_result.transcript);
+            }
 
             SpeechAsrResult result{};
             result.sequence_number = result_sequence_number++;
