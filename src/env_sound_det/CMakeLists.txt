@@ -36,8 +36,7 @@ target_link_libraries(signlang_eyes_env_sound_det PRIVATE
         spdlog::spdlog
         iceoryx2-cxx::shared-lib-cxx
         signlang::rknn_runtime
-        Threads::Threads
-        dl)
+        Threads::Threads)
 
 add_custom_command(TARGET signlang_eyes_env_sound_det POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory

@@ -49,8 +49,7 @@ target_link_libraries(signlang_eyes_speech_asr PRIVATE
         signlang::rknn_runtime
         fftw3f
         Threads::Threads
-        m
-        dl)
+        m)
 
 add_custom_command(TARGET signlang_eyes_speech_asr POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
