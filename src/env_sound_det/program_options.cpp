@@ -74,8 +74,8 @@ namespace signlang::env_sound_det {
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultWindowMs)))(
         "overlap", "Overlap ratio between adjacent detection windows",
         cxxopts::value<double>()->default_value(std::to_string(kDefaultOverlapRatio)))(
-        "top-k", "Number of top classes to evaluate for dangerous sound labels",
-        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kMaxTopClassCount)))(
+        "score-threshold", "Minimum score threshold for dangerous sound detection",
+        cxxopts::value<float>()->default_value(std::to_string(kDefaultScoreThreshold)))(
         "subscriber-buffer", "iceoryx2 subscriber queue size",
         cxxopts::value<std::uint64_t>()->default_value(std::to_string(kDefaultSubscriberBufferSize)))(
         "npu-core", "RK3588 NPU core mask: auto, all, 0, 1, 2, 0_1, 0_1_2",
@@ -105,9 +105,9 @@ namespace signlang::env_sound_det {
       throw std::runtime_error("--overlap must be in the range [0.0, 1.0)");
     }
 
-    const auto top_k = parsed_options["top-k"].as<std::uint32_t>();
-    if (top_k == 0 || top_k > kMaxTopClassCount) {
-      throw std::runtime_error("--top-k must be between 1 and " + std::to_string(kMaxTopClassCount));
+    const auto score_threshold = parsed_options["score-threshold"].as<float>();
+    if (score_threshold < 0.0F || score_threshold > 1.0F) {
+      throw std::runtime_error("--score-threshold must be in the range [0.0, 1.0]");
     }
 
     const auto subscriber_buffer_size = parsed_options["subscriber-buffer"].as<std::uint64_t>();
@@ -122,7 +122,7 @@ namespace signlang::env_sound_det {
         .class_map_path = parsed_options["class-map"].as<std::string>(),
         .window_ms = window_ms,
         .overlap_ratio = overlap_ratio,
-        .top_k = top_k,
+        .score_threshold = score_threshold,
         .subscriber_buffer_size = subscriber_buffer_size,
         .npu_core_mask = parse_npu_core_mask(parsed_options["npu-core"].as<std::string>()),
         .rknn_priority_flag = parse_rknn_priority_flag(parsed_options["rknn-priority"].as<std::string>()),

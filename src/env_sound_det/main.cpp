@@ -38,8 +38,8 @@ namespace {
   }
 
   auto has_dangerous_sound(const signlang::env_sound_det::YamnetInferenceResult& inference_result) -> bool {
-    for (std::uint32_t index = 0; index < inference_result.top_class_count; ++index) {
-      if (is_dangerous_sound_label(inference_result.top_classes[index].label)) {
+    for (std::uint32_t index = 0; index < inference_result.detected_class_count; ++index) {
+      if (is_dangerous_sound_label(inference_result.detected_classes[index].label)) {
         return true;
       }
     }
@@ -125,7 +125,7 @@ auto main(int argc, char** argv) -> int {
       try {
         spdlog::info("Initializing YAMNet model");
         YamnetModel model{options.model_path, options.class_map_path, options.npu_core_mask, options.rknn_priority_flag,
-                          options.top_k};
+                          options.score_threshold};
         spdlog::info("YAMNet model loaded successfully");
 
         IpcStateControlClient state_control_client{options.state_control_service_name};

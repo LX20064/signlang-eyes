@@ -14,7 +14,7 @@ namespace signlang::env_sound_det {
   constexpr std::uint32_t kYamnetSampleRateHz = 16000;
   constexpr std::uint32_t kDefaultWindowMs = 3000;
   constexpr double kDefaultOverlapRatio = 0.2;
-  constexpr std::uint32_t kMaxTopClassCount = 5;
+  constexpr float kDefaultScoreThreshold = 0.3F;
   constexpr std::uint32_t kMaxClassLabelLength = 128;
 
   struct EnvSoundClassScore {
@@ -30,7 +30,7 @@ namespace signlang::env_sound_det {
     std::string class_map_path;
     std::uint32_t window_ms;
     double overlap_ratio;
-    std::uint32_t top_k;
+    float score_threshold;
     std::uint64_t subscriber_buffer_size;
     rknn_core_mask npu_core_mask;
     std::uint32_t rknn_priority_flag;

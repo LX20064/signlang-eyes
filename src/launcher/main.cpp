@@ -428,7 +428,7 @@ static auto build_env_sound_det_args(const toml::table& cfg) -> std::vector<std:
   if (const auto* tbl = cfg["env_sound_det"].as_table()) {
     add_opt_int(args, "--window-ms", opt_int(*tbl, "window_ms"));
     add_opt_double(args, "--overlap", opt_double(*tbl, "overlap"));
-    add_opt_int(args, "--top-k", opt_int(*tbl, "top_k"));
+    add_opt_double(args, "--score-threshold", opt_double(*tbl, "score_threshold"));
     add_opt_str(args, "--model", opt_string(*tbl, "model"));
     add_opt_str(args, "--class-map", opt_string(*tbl, "class_map"));
     add_opt_str(args, "--npu-core", opt_string(*tbl, "npu_core"));
