@@ -1,6 +1,8 @@
+#include "common/logging.hpp"
 #include "handpose_model.hpp"
 #include "handpose_transport.hpp"
 #include "program_options.hpp"
+#include "spdlog/spdlog.h"
 
 #include <array>
 #include <chrono>
@@ -33,6 +35,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::handpose_det::ProgramOptions;
   using signlang::handpose_det::ProgramUsage;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
@@ -41,6 +45,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto& options = std::get<ProgramOptions>(parse_result);
+    signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
     HandPoseModel model{options.model_path, options.rknn_runtime_library_path, options};
@@ -93,7 +98,7 @@ auto main(int argc, char** argv) -> int {
 
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

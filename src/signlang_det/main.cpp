@@ -1,7 +1,9 @@
+#include "common/logging.hpp"
 #include "feature_extractor.hpp"
 #include "iceoryx_gateway.hpp"
 #include "keypoint_ring_buffer.hpp"
 #include "program_options.hpp"
+#include "spdlog/spdlog.h"
 #include "signlang_model.hpp"
 #include "signlang_result.hpp"
 
@@ -157,7 +159,7 @@ namespace {
 
         next_window_end_seq = window_end_seq + hop_frames;
       } catch (const std::exception& e) {
-        std::cerr << "Inference error: " << e.what() << '\n';
+        spdlog::error("Inference error: {}", e.what());
         next_window_end_seq = window_end_seq + hop_frames;
       }
     }
@@ -172,6 +174,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::signlang_det::KeypointRingBuffer;
   using signlang::signlang_det::compute_buffer_capacity;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
@@ -180,6 +184,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto options = std::get<ProgramOptions>(parse_result);
+    signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
     const auto buffer_capacity = compute_buffer_capacity(
@@ -207,7 +212,7 @@ auto main(int argc, char** argv) -> int {
 
     return 0;
   } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << '\n';
+    spdlog::error("Error: {}", e.what());
     return 1;
   }
 }

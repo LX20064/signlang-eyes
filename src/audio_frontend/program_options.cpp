@@ -2,6 +2,7 @@
 
 #include "sound_source_localization.hpp"
 
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
 #include <cmath>
@@ -85,6 +86,7 @@ namespace signlang::audio_frontend {
         "capture-channels", "Requested ALSA capture channel count", cxxopts::value<std::uint32_t>())(
         "publish-rate", "Published audio sample rate in Hz", cxxopts::value<std::uint32_t>())(
         "publish-channels", "Published audio channel count", cxxopts::value<std::uint32_t>())("h,help", "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -133,6 +135,7 @@ namespace signlang::audio_frontend {
         .publish_period_ms = publish_period_ms,
         .capture_format = capture_format,
         .publish_format = publish_format,
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     }};
   }
 

@@ -1,6 +1,7 @@
 #ifndef SIGNLANG_EYES_HANDPOSE_DET_PROGRAM_OPTIONS_HPP
 #define SIGNLANG_EYES_HANDPOSE_DET_PROGRAM_OPTIONS_HPP
 
+#include "common/logging.hpp"
 #include "handpose_frame.hpp"
 
 #include <cstdint>
@@ -31,6 +32,7 @@ namespace signlang::handpose_det {
     std::uint32_t max_detections;
     std::string npu_core_mask;
     bool verbose;
+    signlang::logging::Options logging;
   };
 
   struct ProgramUsage {

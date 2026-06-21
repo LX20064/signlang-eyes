@@ -1,5 +1,6 @@
 #include "program_options.hpp"
 
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
 #include <stdexcept>
@@ -65,6 +66,7 @@ namespace signlang::signlang_det {
         cxxopts::value<float>()->default_value(std::to_string(kDefaultConfidenceMargin)))(
         "npu-core", "NPU core selection: auto,0,1,2,0_1,0_1_2,all",
         cxxopts::value<std::string>()->default_value("auto"))("h,help", "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -148,6 +150,7 @@ namespace signlang::signlang_det {
         .dtw_window_ratio = dtw_window_ratio,
         .confidence_threshold = confidence_threshold,
         .confidence_margin = confidence_margin,
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     };
   }
 

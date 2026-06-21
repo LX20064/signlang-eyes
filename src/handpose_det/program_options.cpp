@@ -1,5 +1,6 @@
 #include "program_options.hpp"
 
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
 #include <stdexcept>
@@ -42,6 +43,7 @@ namespace signlang::handpose_det {
         "npu-core", "RK3588 NPU core mask: auto,0,1,2,0_1,0_1_2,all",
         cxxopts::value<std::string>()->default_value("auto"))("verbose", "Print model tensor details")("h,help",
                                                                                                        "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -99,6 +101,7 @@ namespace signlang::handpose_det {
         .max_detections = max_detections,
         .npu_core_mask = parsed_options["npu-core"].as<std::string>(),
         .verbose = parsed_options.count("verbose") != 0,
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     }};
   }
 

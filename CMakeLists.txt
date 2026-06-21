@@ -43,6 +43,14 @@ add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include)
 add_library(tomlplusplus::tomlplusplus ALIAS tomlplusplus)
 
+# spdlog
+add_library(spdlog SHARED IMPORTED GLOBAL)
+set_target_properties(spdlog PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/lib/aarch64/libspdlog.so
+    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include
+    INTERFACE_COMPILE_DEFINITIONS "SPDLOG_COMPILED_LIB;SPDLOG_SHARED_LIB")
+add_library(spdlog::spdlog ALIAS spdlog)
+
 # iceoryx2
 list(APPEND CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/iceoryx2)
 find_package(iceoryx2-cxx REQUIRED)
@@ -82,7 +90,7 @@ add_library(libjpeg-turbo::turbojpeg ALIAS libjpeg_turbo)
 # Modules
 file(GLOB MODULE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/*)
 foreach(MODULE_DIR ${MODULE_DIRS})
-    if(IS_DIRECTORY ${MODULE_DIR})
+    if(IS_DIRECTORY ${MODULE_DIR} AND EXISTS ${MODULE_DIR}/CMakeLists.txt)
         add_subdirectory(${MODULE_DIR})
     endif()
 endforeach()
@@ -92,6 +100,10 @@ install(FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/iceoryx2/lib/libiceoryx2_cxx.so
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/iceoryx2/lib/libiceoryx2_ffi_c.so
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rknn_runtime/lib/aarch64/librknnrt.so
+    DESTINATION lib)
+
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/lib/aarch64/libspdlog.so
     DESTINATION lib)
 
 # Install default launcher configuration

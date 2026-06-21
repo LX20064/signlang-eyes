@@ -1,5 +1,6 @@
 #include "program_options.hpp"
 
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
 #include <cstdint>
@@ -84,6 +85,7 @@ namespace signlang::env_sound_det {
         cxxopts::value<std::string>()->default_value("auto"))(
         "rknn-priority", "RKNN context priority: high, medium, low",
         cxxopts::value<std::string>()->default_value("medium"))("h,help", "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -133,6 +135,7 @@ namespace signlang::env_sound_det {
         .subscriber_buffer_size = subscriber_buffer_size,
         .npu_core_mask = parse_npu_core_mask(parsed_options["npu-core"].as<std::string>()),
         .rknn_priority_flag = parse_rknn_priority_flag(parsed_options["rknn-priority"].as<std::string>()),
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     }};
   }
 

@@ -1,8 +1,11 @@
 #include "audio_frame.hpp"
 #include "audio_format.hpp"
 
+#include "common/logging.hpp"
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 #include "iox2/iceoryx2.hpp"
+#include "spdlog/spdlog.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -23,6 +26,7 @@ namespace {
     std::string output_path;
     std::uint32_t duration_sec;
     std::uint64_t subscriber_buffer_size;
+    signlang::logging::Options logging;
   };
 
   auto parse_options(int argc, char** argv) -> ProgramOptions {
@@ -36,6 +40,7 @@ namespace {
         "duration-sec", "Recording duration in seconds", cxxopts::value<std::uint32_t>()->default_value("10"))(
         "buffer-size", "iceoryx2 subscriber buffer size", cxxopts::value<std::uint64_t>()->default_value("2"))(
         "h,help", "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -62,6 +67,7 @@ namespace {
         .output_path = parsed_options["output"].as<std::string>(),
         .duration_sec = duration_sec,
         .subscriber_buffer_size = subscriber_buffer_size,
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     };
   }
 
@@ -184,8 +190,11 @@ namespace {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+  signlang::logging::initialize();
+
   try {
     const auto options = parse_options(argc, argv);
+    signlang::logging::initialize(options.logging);
     AudioSubscriber subscriber{options.service_name, options.subscriber_buffer_size};
 
     std::vector<std::int16_t> samples;
@@ -226,10 +235,10 @@ auto main(int argc, char** argv) -> int {
     }
 
     write_wav_file(options.output_path, samples, sample_rate_hz, channel_count);
-    std::cout << "Recorded " << received_frames << " audio frames to " << options.output_path << '\n';
+    spdlog::info("Recorded {} audio frames to {}", received_frames, options.output_path);
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

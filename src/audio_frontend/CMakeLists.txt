@@ -15,6 +15,7 @@ target_include_directories(signlang_eyes_audio_frontend PRIVATE
 
 target_link_libraries(signlang_eyes_audio_frontend PRIVATE
         cxxopts::cxxopts
+        spdlog::spdlog
         iceoryx2-cxx::shared-lib-cxx
         ALSA::ALSA
         m)
@@ -33,5 +34,6 @@ if(SIGNLANG_ENABLE_TESTS)
 
         target_link_libraries(signlang_eyes_audio_frontend_record_test PRIVATE
                 cxxopts::cxxopts
+                spdlog::spdlog
                 iceoryx2-cxx::shared-lib-cxx)
 endif()

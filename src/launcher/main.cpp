@@ -1,18 +1,24 @@
 #include "program_options.hpp"
 
+#include "common/logging.hpp"
+#include "spdlog/spdlog.h"
 #include "toml.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <csignal>
+#include <ctime>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <span>
 #include <string>
+#include <system_error>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <variant>
@@ -61,8 +67,8 @@ void warn_ipc_keys_in_table(const toml::table& tbl, const std::string& section_n
   for (const auto& [key, node] : tbl) {
     for (const auto* ipc_key : kIpcKeys) {
       if (key == ipc_key) {
-        std::cerr << "[launcher] WARNING: [" << section_name << "] '" << key
-                  << "' is ignored — IPC service names are hardcoded in the launcher\n";
+        spdlog::warn("[launcher] [{}] '{}' is ignored; IPC service names are hardcoded in the launcher",
+                     section_name, key.str());
         break;
       }
     }
@@ -92,6 +98,11 @@ struct ChildInfo {
   std::string name;
 };
 
+struct LoggingConfig {
+  std::uint64_t rotate_size = signlang::logging::kDefaultRotateSize;
+  std::uint64_t retain_files = signlang::logging::kDefaultRetainFiles;
+};
+
 std::vector<ChildInfo> g_children;
 volatile std::sig_atomic_t g_shutdown = 0;
 
@@ -99,7 +110,7 @@ void handle_signal(int /* sig */) { g_shutdown = 1; }
 
 void terminate_all_children() {
   for (const auto& child : g_children) {
-    std::cerr << "[launcher] terminating " << child.name << " (pid " << child.pid << ")\n";
+    spdlog::info("[launcher] terminating {} (pid {})", child.name, child.pid);
     kill(child.pid, SIGTERM);
   }
   for (const auto& child : g_children) {
@@ -111,13 +122,13 @@ void terminate_all_children() {
 auto launch_child(const std::vector<std::string>& args) -> pid_t {
   int pipefd[2];
   if (pipe2(pipefd, O_CLOEXEC) < 0) {
-    std::cerr << "[launcher] pipe2 failed: " << std::strerror(errno) << '\n';
+    spdlog::error("[launcher] pipe2 failed: {}", std::strerror(errno));
     return -1;
   }
 
   const auto pid = fork();
   if (pid < 0) {
-    std::cerr << "[launcher] fork failed: " << std::strerror(errno) << '\n';
+    spdlog::error("[launcher] fork failed: {}", std::strerror(errno));
     close(pipefd[0]);
     close(pipefd[1]);
     return -1;
@@ -146,7 +157,7 @@ auto launch_child(const std::vector<std::string>& args) -> pid_t {
   close(pipefd[0]);
 
   if (n > 0) {
-    std::cerr << "[launcher] exec failed for " << args[0] << ": " << std::strerror(child_err) << '\n';
+    spdlog::error("[launcher] exec failed for {}: {}", args[0], std::strerror(child_err));
     int status = 0;
     waitpid(pid, &status, 0);
     return -1;
@@ -207,6 +218,125 @@ void add_opt_double(std::vector<std::string>& args, const char* flag, const std:
 void add_opt_bool_true(std::vector<std::string>& args, const char* flag, const std::optional<bool>& val) {
   if (val && *val) {
     args.emplace_back(flag);
+  }
+}
+
+auto logging_config_from_toml(const toml::table& config) -> LoggingConfig {
+  auto logging = LoggingConfig{};
+
+  const auto logging_node = config["logging"];
+  if (!logging_node) {
+    return logging;
+  }
+
+  const auto* logging_table = logging_node.as_table();
+  if (logging_table == nullptr) {
+    throw std::runtime_error("[logging] must be a TOML table");
+  }
+
+  if (const auto rotate_size = opt_int(*logging_table, "rotate_size")) {
+    if (*rotate_size <= 0) {
+      throw std::runtime_error("[logging].rotate_size must be greater than 0");
+    }
+    logging.rotate_size = static_cast<std::uint64_t>(*rotate_size);
+  }
+
+  if (const auto retain_files = opt_int(*logging_table, "retain_files")) {
+    if (*retain_files <= 0) {
+      throw std::runtime_error("[logging].retain_files must be greater than 0");
+    }
+    logging.retain_files = static_cast<std::uint64_t>(*retain_files);
+  }
+
+  return logging;
+}
+
+auto utc_start_timestamp() -> std::string {
+  const auto now = std::time(nullptr);
+  std::tm utc_time{};
+  gmtime_r(&now, &utc_time);
+
+  std::array<char, 32> buffer{};
+  if (std::strftime(buffer.data(), buffer.size(), "%Y%m%dT%H%M%SZ", &utc_time) == 0) {
+    throw std::runtime_error("Failed to format launcher UTC start time");
+  }
+  return buffer.data();
+}
+
+auto log_path_for(const std::string& start_timestamp, const std::string& module_name) -> std::string {
+  return (std::filesystem::path{"log"} / (start_timestamp + "-" + module_name + ".log")).string();
+}
+
+void append_logging_args(std::vector<std::string>& args, const std::string& start_timestamp,
+                         const std::string& module_name, std::uint64_t rotate_size) {
+  args.emplace_back("--log-file");
+  args.push_back(log_path_for(start_timestamp, module_name));
+  args.emplace_back("--log-rotate-size");
+  args.push_back(std::to_string(rotate_size));
+}
+
+auto is_log_file(const std::filesystem::path& path) -> bool {
+  const auto filename = path.filename().string();
+  return filename.find(".log") != std::string::npos;
+}
+
+void cleanup_old_log_files(std::uint64_t retain_files) {
+  namespace fs = std::filesystem;
+
+  const auto log_dir = fs::path{"log"};
+  fs::create_directories(log_dir);
+
+  struct LogFile {
+    fs::path path;
+    fs::file_time_type modified_time;
+  };
+
+  std::vector<LogFile> log_files;
+  std::error_code error;
+  auto it = fs::directory_iterator{log_dir, error};
+  if (error) {
+    spdlog::warn("[launcher] failed to scan log directory '{}': {}", log_dir.string(), error.message());
+    return;
+  }
+
+  const auto end = fs::directory_iterator{};
+  for (; it != end; it.increment(error)) {
+    if (error) {
+      spdlog::warn("[launcher] failed while scanning log directory '{}': {}", log_dir.string(), error.message());
+      return;
+    }
+
+    const auto& entry = *it;
+    if (!entry.is_regular_file(error) || error || !is_log_file(entry.path())) {
+      error.clear();
+      continue;
+    }
+
+    const auto modified_time = entry.last_write_time(error);
+    if (error) {
+      spdlog::warn("[launcher] failed to read log mtime '{}': {}", entry.path().string(), error.message());
+      error.clear();
+      continue;
+    }
+    log_files.push_back(LogFile{.path = entry.path(), .modified_time = modified_time});
+  }
+
+  if (log_files.size() <= retain_files) {
+    return;
+  }
+
+  std::sort(log_files.begin(), log_files.end(),
+            [](const LogFile& lhs, const LogFile& rhs) { return lhs.modified_time < rhs.modified_time; });
+
+  const auto remove_count = log_files.size() - static_cast<std::size_t>(retain_files);
+  for (std::size_t i = 0; i < remove_count; ++i) {
+    fs::remove(log_files[i].path, error);
+    if (error) {
+      spdlog::warn("[launcher] failed to remove old log '{}': {}", log_files[i].path.string(), error.message());
+      error.clear();
+    } else {
+      spdlog::info("[launcher] removed old log '{}'", log_files[i].path.string());
+    }
   }
 }
 
@@ -364,6 +494,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::launcher::ProgramUsage;
   using signlang::launcher::parse_program_options;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (std::holds_alternative<ProgramUsage>(parse_result)) {
@@ -377,16 +509,24 @@ auto main(int argc, char** argv) -> int {
     try {
       config = toml::parse_file(options.config_path);
     } catch (const toml::parse_error& err) {
-      std::cerr << "[launcher] failed to parse config file '" << options.config_path
-                << "': " << err.what() << '\n';
+      spdlog::error("[launcher] failed to parse config file '{}': {}", options.config_path, err.what());
       return 1;
     } catch (const std::runtime_error& err) {
-      std::cerr << "[launcher] failed to open config file '" << options.config_path
-                << "': " << err.what() << '\n';
+      spdlog::error("[launcher] failed to open config file '{}': {}", options.config_path, err.what());
       return 1;
     }
 
-    std::cout << "[launcher] loaded config: " << options.config_path << '\n';
+    const auto logging_config = logging_config_from_toml(config);
+    const auto start_timestamp = utc_start_timestamp();
+    signlang::logging::initialize(
+        signlang::logging::Options{
+            .log_file = log_path_for(start_timestamp, "launcher"),
+            .rotate_size = logging_config.rotate_size,
+        },
+        logging_config.retain_files);
+    cleanup_old_log_files(logging_config.retain_files);
+
+    spdlog::info("[launcher] loaded config: {}", options.config_path);
 
     // Warn about any IPC service keys in the TOML
     warn_ipc_keys_in_config(config);
@@ -400,7 +540,7 @@ auto main(int argc, char** argv) -> int {
       std::vector<std::string> args;
     };
 
-    const std::vector<ModuleEntry> modules = {
+    std::vector<ModuleEntry> modules = {
       {"state_machine",  build_state_machine_args(config)},
       {"audio_frontend", build_audio_frontend_args(config)},
       {"video_frontend", build_video_frontend_args(config)},
@@ -410,25 +550,32 @@ auto main(int argc, char** argv) -> int {
       {"signlang_det",   build_signlang_det_args(config)},
     };
 
+    for (auto& mod : modules) {
+      append_logging_args(mod.args, start_timestamp, mod.name, logging_config.rotate_size);
+    }
+
     for (const auto& mod : modules) {
-      std::cout << "[launcher] starting " << mod.name;
+      auto args_text = std::string{};
       for (std::size_t i = 1; i < mod.args.size(); ++i) {
-        std::cout << ' ' << mod.args[i];
+        if (!args_text.empty()) {
+          args_text += ' ';
+        }
+        args_text += mod.args[i];
       }
-      std::cout << '\n';
+      spdlog::info("[launcher] starting {} {}", mod.name, args_text);
 
       const auto pid = launch_child(mod.args);
       if (pid < 0) {
-        std::cerr << "[launcher] failed to start " << mod.name << ", aborting\n";
+        spdlog::error("[launcher] failed to start {}, aborting", mod.name);
         terminate_all_children();
         return 1;
       }
 
       g_children.push_back({pid, mod.name});
-      std::cout << "[launcher] " << mod.name << " started (pid " << pid << ")\n";
+      spdlog::info("[launcher] {} started (pid {})", mod.name, pid);
     }
 
-    std::cout << "[launcher] all " << g_children.size() << " modules running, monitoring...\n";
+    spdlog::info("[launcher] all {} modules running, monitoring...", g_children.size());
 
     while (g_shutdown == 0) {
       int status = 0;
@@ -441,15 +588,14 @@ auto main(int argc, char** argv) -> int {
           if (WIFEXITED(status)) {
             const auto exit_code = WEXITSTATUS(status);
             if (exit_code != 0) {
-              std::cerr << "[launcher] " << it->name << " (pid " << pid
-                        << ") exited with code " << exit_code << ", shutting down\n";
+              spdlog::error("[launcher] {} (pid {}) exited with code {}, shutting down",
+                            it->name, pid, exit_code);
             } else {
-              std::cerr << "[launcher] " << it->name << " (pid " << pid
-                        << ") exited normally, shutting down\n";
+              spdlog::warn("[launcher] {} (pid {}) exited normally, shutting down", it->name, pid);
             }
           } else if (WIFSIGNALED(status)) {
-            std::cerr << "[launcher] " << it->name << " (pid " << pid
-                      << ") killed by signal " << WTERMSIG(status) << ", shutting down\n";
+            spdlog::error("[launcher] {} (pid {}) killed by signal {}, shutting down",
+                          it->name, pid, WTERMSIG(status));
           }
           g_children.erase(it);
         }
@@ -465,7 +611,7 @@ auto main(int argc, char** argv) -> int {
     terminate_all_children();
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << "[launcher] fatal error: " << error.what() << '\n';
+    spdlog::error("[launcher] fatal error: {}", error.what());
     return 1;
   }
 }

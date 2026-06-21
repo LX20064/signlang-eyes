@@ -1,7 +1,10 @@
 #include "video_frame.hpp"
 
+#include "common/logging.hpp"
+#include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 #include "iox2/iceoryx2.hpp"
+#include "spdlog/spdlog.h"
 
 #include <algorithm>
 #include <chrono>
@@ -26,6 +29,7 @@ namespace {
     std::optional<std::string> output_path;
     std::uint32_t timeout_sec;
     std::uint64_t subscriber_buffer_size;
+    signlang::logging::Options logging;
   };
 
   struct VideoSample {
@@ -44,6 +48,7 @@ namespace {
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultTimeoutSec)))(
         "buffer-size", "iceoryx2 subscriber buffer size", cxxopts::value<std::uint64_t>()->default_value("2"))(
         "h,help", "Print usage");
+    signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
     if (parsed_options.count("help") != 0) {
@@ -71,6 +76,7 @@ namespace {
             parsed_options.count("output") == 0 ? std::nullopt : std::make_optional(parsed_options["output"].as<std::string>()),
         .timeout_sec = timeout_sec,
         .subscriber_buffer_size = subscriber_buffer_size,
+        .logging = signlang::logging::parse_cli_options(parsed_options),
     };
   }
 
@@ -190,8 +196,11 @@ namespace {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
+  signlang::logging::initialize();
+
   try {
     const auto options = parse_options(argc, argv);
+    signlang::logging::initialize(options.logging);
     VideoSubscriber subscriber{options.service_name, options.subscriber_buffer_size};
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{options.timeout_sec};
 
@@ -199,7 +208,7 @@ auto main(int argc, char** argv) -> int {
       auto sample = subscriber.receive_one();
       if (sample.has_value()) {
         const auto output_path = save_snapshot(options.output_path, sample.value());
-        std::cout << "Saved video snapshot to " << output_path << '\n';
+        spdlog::info("Saved video snapshot to {}", output_path);
         return 0;
       }
 
@@ -208,7 +217,7 @@ auto main(int argc, char** argv) -> int {
 
     throw std::runtime_error("Timed out waiting for a video frame from service: " + options.service_name);
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

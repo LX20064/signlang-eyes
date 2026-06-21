@@ -13,6 +13,7 @@ target_include_directories(signlang_eyes_video_frontend PRIVATE
 
 target_link_libraries(signlang_eyes_video_frontend PRIVATE
         cxxopts::cxxopts
+        spdlog::spdlog
         iceoryx2-cxx::shared-lib-cxx
         libjpeg-turbo::turbojpeg)
 
@@ -30,5 +31,6 @@ if(SIGNLANG_ENABLE_TESTS)
 
         target_link_libraries(signlang_eyes_video_frontend_snapshot_test PRIVATE
                 cxxopts::cxxopts
+                spdlog::spdlog
                 iceoryx2-cxx::shared-lib-cxx)
 endif()

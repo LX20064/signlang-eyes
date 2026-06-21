@@ -1,6 +1,7 @@
 #ifndef SIGNLANG_EYES_SIGNLANG_DET_PROGRAM_OPTIONS_HPP
 #define SIGNLANG_EYES_SIGNLANG_DET_PROGRAM_OPTIONS_HPP
 
+#include "common/logging.hpp"
 #include "rknn_api.h"
 
 #include <cstdint>
@@ -39,6 +40,7 @@ struct ProgramOptions {
   float dtw_window_ratio;
   float confidence_threshold;
   float confidence_margin;
+  signlang::logging::Options logging;
 };
 
 struct ProgramUsage {

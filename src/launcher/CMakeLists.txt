@@ -3,13 +3,15 @@ add_executable(signlang_eyes_launcher
         program_options.cpp)
 
 set_target_properties(signlang_eyes_launcher PROPERTIES
-        OUTPUT_NAME launcher)
+        OUTPUT_NAME launcher
+        INSTALL_RPATH "$ORIGIN/lib")
 
 target_include_directories(signlang_eyes_launcher PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(signlang_eyes_launcher PRIVATE
         cxxopts::cxxopts
-        tomlplusplus::tomlplusplus)
+        tomlplusplus::tomlplusplus
+        spdlog::spdlog)
 
 install(TARGETS signlang_eyes_launcher RUNTIME DESTINATION .)

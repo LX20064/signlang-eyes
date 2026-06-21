@@ -1,6 +1,7 @@
 #ifndef SIGNLANG_EYES_ENV_SOUND_DET_PROGRAM_OPTIONS_HPP
 #define SIGNLANG_EYES_ENV_SOUND_DET_PROGRAM_OPTIONS_HPP
 
+#include "common/logging.hpp"
 #include "rknn_api.h"
 
 #include <array>
@@ -34,6 +35,7 @@ namespace signlang::env_sound_det {
     std::uint64_t subscriber_buffer_size;
     rknn_core_mask npu_core_mask;
     std::uint32_t rknn_priority_flag;
+    signlang::logging::Options logging;
   };
 
   struct ProgramUsage {

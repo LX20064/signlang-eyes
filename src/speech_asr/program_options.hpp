@@ -1,6 +1,7 @@
 #ifndef SIGNLANG_EYES_SPEECH_ASR_PROGRAM_OPTIONS_HPP
 #define SIGNLANG_EYES_SPEECH_ASR_PROGRAM_OPTIONS_HPP
 
+#include "common/logging.hpp"
 #include "speech_asr_result.hpp"
 #include "rknn_api.h"
 
@@ -30,6 +31,7 @@ namespace signlang::speech_asr {
     rknn_core_mask encoder_npu_core_mask;
     rknn_core_mask decoder_npu_core_mask;
     std::uint32_t rknn_priority_flag;
+    signlang::logging::Options logging;
   };
 
   struct ProgramUsage {

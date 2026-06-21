@@ -1,9 +1,11 @@
 #include "alsa_capture_device.hpp"
 #include "audio_processor.hpp"
 #include "audio_publisher.hpp"
+#include "common/logging.hpp"
 #include "program_options.hpp"
 #include "sound_source_blackboard.hpp"
 #include "sound_source_localization.hpp"
+#include "spdlog/spdlog.h"
 
 #include <chrono>
 #include <csignal>
@@ -53,6 +55,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::audio_frontend::SoundSourceBlackboardPublisher;
   using signlang::audio_frontend::SoundSourceLocalizer;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
@@ -61,6 +65,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto& options = std::get<ProgramOptions>(parse_result);
+    signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
     AlsaCaptureDevice capture_device{options.audio_device_name, options.capture_format, options.publish_period_ms};
@@ -95,7 +100,7 @@ auto main(int argc, char** argv) -> int {
 
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

@@ -1,7 +1,9 @@
 #include "audio_ring_buffer.hpp"
+#include "common/logging.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
 #include "speech_asr_result.hpp"
+#include "spdlog/spdlog.h"
 #include "whisper_model.hpp"
 
 #include <algorithm>
@@ -84,6 +86,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::speech_asr::SpeechAsrResult;
   using signlang::speech_asr::WhisperModel;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
@@ -92,6 +96,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto options = std::get<ProgramOptions>(parse_result);
+    signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
     const auto window_sample_count = samples_for_window_ms(kWhisperSampleRateHz, options.window_ms);
@@ -213,7 +218,7 @@ auto main(int argc, char** argv) -> int {
 
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

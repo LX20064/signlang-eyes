@@ -1,3 +1,7 @@
+[logging]
+rotate_size = 1048576
+retain_files = 100
+
 [audio_frontend]
 device = "hw:2,0"                  # ALSA device name (e.g. "hw:0,0", "default")
 capture_rate = 16000               # Requested capture sample rate in Hz

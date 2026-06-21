@@ -1,4 +1,6 @@
+#include "common/logging.hpp"
 #include "program_options.hpp"
+#include "spdlog/spdlog.h"
 #include "v4l2_capture_device.hpp"
 #include "video_processor.hpp"
 #include "video_publisher.hpp"
@@ -42,6 +44,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::video_frontend::VideoProcessor;
   using signlang::video_frontend::VideoPublisher;
 
+  signlang::logging::initialize();
+
   try {
     const auto parse_result = parse_program_options(argc, argv);
     if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
@@ -50,6 +54,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto& options = std::get<ProgramOptions>(parse_result);
+    signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
     V4l2CaptureDevice capture_device{options.camera_device_name, options.capture_format, options.fps};
@@ -68,7 +73,7 @@ auto main(int argc, char** argv) -> int {
 
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    spdlog::error("{}", error.what());
     return 1;
   }
 }

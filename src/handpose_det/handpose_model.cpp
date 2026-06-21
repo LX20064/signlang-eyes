@@ -1,12 +1,12 @@
 #include "handpose_model.hpp"
 
 #include "Float16.h"
+#include "spdlog/spdlog.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -18,6 +18,17 @@ namespace signlang::handpose_det {
     constexpr auto kObjectConfidenceChannel = std::uint32_t{4};
     constexpr auto kFirstKeypointChannel = std::uint32_t{5};
     constexpr auto kKeypointFieldCount = std::uint32_t{3};
+
+    auto dims_string(const rknn_tensor_attr& attr) -> std::string {
+      auto result = std::string{};
+      for (std::uint32_t i = 0; i < attr.n_dims; ++i) {
+        if (i != 0) {
+          result += ',';
+        }
+        result += std::to_string(attr.dims[i]);
+      }
+      return result;
+    }
 
     auto read_file(const std::string& path) -> std::vector<std::uint8_t> {
       std::ifstream file{path, std::ios::binary | std::ios::ate};
@@ -257,17 +268,10 @@ namespace signlang::handpose_det {
   void HandPoseModel::print_tensor_details() const {
     const auto& input = input_attrs_[0];
     const auto& output = output_attrs_[0];
-    std::cout << "RKNN input: name=" << input.name << " dims=[";
-    for (std::uint32_t i = 0; i < input.n_dims; ++i) {
-      std::cout << (i == 0 ? "" : ",") << input.dims[i];
-    }
-    std::cout << "] size=" << input.size << " stride_size=" << input.size_with_stride << '\n';
-
-    std::cout << "RKNN output: name=" << output.name << " dims=[";
-    for (std::uint32_t i = 0; i < output.n_dims; ++i) {
-      std::cout << (i == 0 ? "" : ",") << output.dims[i];
-    }
-    std::cout << "] size=" << output.size << " stride_size=" << output.size_with_stride << '\n';
+    spdlog::info("RKNN input: name={} dims=[{}] size={} stride_size={}",
+                 input.name, dims_string(input), input.size, input.size_with_stride);
+    spdlog::info("RKNN output: name={} dims=[{}] size={} stride_size={}",
+                 output.name, dims_string(output), output.size, output.size_with_stride);
   }
 
   auto HandPoseModel::input_stride_width_pixels() const -> std::uint32_t {
