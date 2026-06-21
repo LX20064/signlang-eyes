@@ -1,7 +1,7 @@
 #ifndef SIGNLANG_EYES_ENV_SOUND_DET_ICEORYX_GATEWAY_HPP
 #define SIGNLANG_EYES_ENV_SOUND_DET_ICEORYX_GATEWAY_HPP
 
-#include "audio_ring_buffer.hpp"
+#include "common/audio_ring_buffer.hpp"
 
 #include "audio_frontend/audio_frame.hpp"
 #include "iox2/iceoryx2.hpp"
@@ -11,6 +11,8 @@
 #include <string>
 
 namespace signlang::env_sound_det {
+
+  using signlang::common::AudioRingBuffer;
 
   struct AudioReceiveStats {
     std::uint32_t accepted_count;

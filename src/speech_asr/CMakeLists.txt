@@ -29,7 +29,6 @@ if(NOT TARGET fftw3f)
 endif()
 
 add_executable(signlang_eyes_speech_asr
-        audio_ring_buffer.cpp
         iceoryx_gateway.cpp
         program_options.cpp
         speech_asr_result.cpp
@@ -47,6 +46,7 @@ target_link_libraries(signlang_eyes_speech_asr PRIVATE
         spdlog::spdlog
         iceoryx2-cxx::shared-lib-cxx
         signlang::rknn_runtime
+        signlang::common
         fftw3f
         Threads::Threads
         m)

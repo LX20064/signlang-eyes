@@ -1,4 +1,4 @@
-#include "audio_ring_buffer.hpp"
+#include "common/audio_ring_buffer.hpp"
 #include "common/logging.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
@@ -56,16 +56,16 @@ namespace {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
-  using signlang::env_sound_det::AudioRingBuffer;
-  using signlang::env_sound_det::AudioWindow;
-  using signlang::env_sound_det::hop_samples_for_overlap;
+  using signlang::common::AudioRingBuffer;
+  using signlang::common::AudioWindow;
+  using signlang::common::hop_samples_for_overlap;
+  using signlang::common::samples_for_window_ms;
   using signlang::env_sound_det::IpcAudioSubscriber;
   using signlang::env_sound_det::IpcStateControlClient;
   using signlang::env_sound_det::kYamnetSampleRateHz;
   using signlang::env_sound_det::parse_program_options;
   using signlang::env_sound_det::ProgramOptions;
   using signlang::env_sound_det::ProgramUsage;
-  using signlang::env_sound_det::samples_for_window_ms;
   using signlang::env_sound_det::YamnetModel;
 
   signlang::logging::initialize();
@@ -87,7 +87,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error("Detection window has no samples");
     }
 
-    AudioRingBuffer audio_buffer{ring_capacity_samples(window_sample_count, hop_sample_count)};
+    AudioRingBuffer audio_buffer{ring_capacity_samples(window_sample_count, hop_sample_count), kYamnetSampleRateHz};
     std::atomic_bool should_stop{false};
     std::exception_ptr worker_error = nullptr;
     std::mutex worker_error_mutex;

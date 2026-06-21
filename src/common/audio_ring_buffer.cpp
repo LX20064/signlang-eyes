@@ -1,20 +1,19 @@
-#include "audio_ring_buffer.hpp"
-
-#include "program_options.hpp"
+#include "common/audio_ring_buffer.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
 
-namespace signlang::env_sound_det {
+namespace signlang::common {
   namespace {
 
     constexpr auto kInt16ToFloatScale = 1.0F / 32768.0F;
 
   } // namespace
 
-  AudioRingBuffer::AudioRingBuffer(std::uint64_t capacity_samples) :
+  AudioRingBuffer::AudioRingBuffer(std::uint64_t capacity_samples, std::uint32_t expected_sample_rate_hz) :
+      expected_sample_rate_hz_{expected_sample_rate_hz},
       samples_(static_cast<std::size_t>(capacity_samples)), start_sample_index_{0}, next_sample_index_{0}, wake_sequence_{0},
       latest_audio_sequence_number_{0}, latest_audio_timestamp_ns_{0}, latest_audio_sample_rate_hz_{0},
       latest_audio_publish_period_ms_{0}, latest_audio_frame_count_{0}, latest_audio_channel_count_{0},
@@ -103,13 +102,19 @@ namespace signlang::env_sound_det {
     return false;
   }
 
+  void AudioRingBuffer::clear() {
+    start_sample_index_.store(next_sample_index_.load(std::memory_order_acquire), std::memory_order_release);
+    wake_sequence_.fetch_add(1, std::memory_order_release);
+    wake_sequence_.notify_all();
+  }
+
   void AudioRingBuffer::notify_stop() {
     wake_sequence_.fetch_add(1, std::memory_order_release);
     wake_sequence_.notify_all();
   }
 
-  auto AudioRingBuffer::accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) -> bool {
-    if (frame.sample_rate_hz != kYamnetSampleRateHz ||
+  auto AudioRingBuffer::accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) const -> bool {
+    if (frame.sample_rate_hz != expected_sample_rate_hz_ ||
         frame.bits_per_sample != signlang::audio_frontend::kBitsPerSample) {
       return false;
     }
@@ -124,7 +129,7 @@ namespace signlang::env_sound_det {
     }
 
     const auto expected_frame_count =
-        static_cast<std::uint32_t>((static_cast<std::uint64_t>(kYamnetSampleRateHz) * frame.publish_period_ms) / 1000);
+        static_cast<std::uint32_t>((static_cast<std::uint64_t>(expected_sample_rate_hz_) * frame.publish_period_ms) / 1000);
     if (frame.frame_count != expected_frame_count) {
       return false;
     }
@@ -166,4 +171,4 @@ namespace signlang::env_sound_det {
     return std::max<std::uint64_t>(1, hop_samples);
   }
 
-} // namespace signlang::env_sound_det
+} // namespace signlang::common

@@ -1,7 +1,7 @@
 #ifndef SIGNLANG_EYES_ENV_SOUND_DET_YAMNET_MODEL_HPP
 #define SIGNLANG_EYES_ENV_SOUND_DET_YAMNET_MODEL_HPP
 
-#include "audio_ring_buffer.hpp"
+#include "common/audio_ring_buffer.hpp"
 #include "program_options.hpp"
 
 #include "rknn_api.h"
@@ -12,6 +12,8 @@
 #include <vector>
 
 namespace signlang::env_sound_det {
+
+  using signlang::common::AudioWindow;
 
   struct YamnetInferenceResult {
     std::uint32_t model_input_sample_count;

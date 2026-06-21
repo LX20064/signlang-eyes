@@ -1,4 +1,4 @@
-#include "audio_ring_buffer.hpp"
+#include "common/audio_ring_buffer.hpp"
 #include "common/logging.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
@@ -72,9 +72,10 @@ namespace {
 } // namespace
 
 auto main(int argc, char** argv) -> int {
-  using signlang::speech_asr::AudioRingBuffer;
-  using signlang::speech_asr::AudioWindow;
-  using signlang::speech_asr::hop_samples_for_overlap;
+  using signlang::common::AudioRingBuffer;
+  using signlang::common::AudioWindow;
+  using signlang::common::hop_samples_for_overlap;
+  using signlang::common::samples_for_window_ms;
   using signlang::speech_asr::IpcAudioSubscriber;
   using signlang::speech_asr::IpcAsrStateMonitor;
   using signlang::speech_asr::IpcResultPublisher;
@@ -82,7 +83,6 @@ auto main(int argc, char** argv) -> int {
   using signlang::speech_asr::parse_program_options;
   using signlang::speech_asr::ProgramOptions;
   using signlang::speech_asr::ProgramUsage;
-  using signlang::speech_asr::samples_for_window_ms;
   using signlang::speech_asr::SpeechAsrResult;
   using signlang::speech_asr::WhisperModel;
 
@@ -105,7 +105,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error("ASR window has no samples");
     }
 
-    AudioRingBuffer audio_buffer{ring_capacity_samples(window_sample_count, hop_sample_count)};
+    AudioRingBuffer audio_buffer{ring_capacity_samples(window_sample_count, hop_sample_count), kWhisperSampleRateHz};
     std::atomic_bool should_stop{false};
     std::exception_ptr worker_error = nullptr;
     std::mutex worker_error_mutex;

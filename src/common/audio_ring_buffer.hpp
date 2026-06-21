@@ -1,5 +1,5 @@
-#ifndef SIGNLANG_EYES_SPEECH_ASR_AUDIO_RING_BUFFER_HPP
-#define SIGNLANG_EYES_SPEECH_ASR_AUDIO_RING_BUFFER_HPP
+#ifndef SIGNLANG_EYES_COMMON_AUDIO_RING_BUFFER_HPP
+#define SIGNLANG_EYES_COMMON_AUDIO_RING_BUFFER_HPP
 
 #include "audio_frontend/audio_frame.hpp"
 
@@ -8,7 +8,7 @@
 #include <optional>
 #include <vector>
 
-namespace signlang::speech_asr {
+namespace signlang::common {
 
   struct AudioWindow {
     std::vector<float> samples;
@@ -25,7 +25,7 @@ namespace signlang::speech_asr {
 
   class AudioRingBuffer {
   public:
-    explicit AudioRingBuffer(std::uint64_t capacity_samples);
+    explicit AudioRingBuffer(std::uint64_t capacity_samples, std::uint32_t expected_sample_rate_hz);
 
     AudioRingBuffer(const AudioRingBuffer&) = delete;
     auto operator=(const AudioRingBuffer&) -> AudioRingBuffer& = delete;
@@ -40,12 +40,13 @@ namespace signlang::speech_asr {
     void notify_stop();
 
   private:
-    static auto accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) -> bool;
+    auto accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) const -> bool;
     static auto align_to_available_window(std::uint64_t requested_start_sample_index,
                                           std::uint64_t available_start_sample_index,
                                           std::uint64_t hop_sample_count) -> std::uint64_t;
     void wait_for_samples(std::uint64_t observed_wake_sequence, const std::atomic_bool& should_stop) const;
 
+    std::uint32_t expected_sample_rate_hz_;
     std::vector<std::atomic<float>> samples_;
     std::atomic_uint64_t start_sample_index_;
     std::atomic_uint64_t next_sample_index_;
@@ -62,6 +63,6 @@ namespace signlang::speech_asr {
   auto samples_for_window_ms(std::uint32_t sample_rate_hz, std::uint32_t window_ms) -> std::uint64_t;
   auto hop_samples_for_overlap(std::uint64_t window_sample_count, double overlap_ratio) -> std::uint64_t;
 
-} // namespace signlang::speech_asr
+} // namespace signlang::common
 
-#endif // SIGNLANG_EYES_SPEECH_ASR_AUDIO_RING_BUFFER_HPP
+#endif // SIGNLANG_EYES_COMMON_AUDIO_RING_BUFFER_HPP
