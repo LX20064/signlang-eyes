@@ -29,8 +29,6 @@ namespace signlang::handpose_det {
                                        "iceoryx2 blackboard service name for global app state storage",
                                        cxxopts::value<std::string>())(
         "m,model", "RKNN model path", cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
-        "rknn-runtime", "RKNN runtime library path, empty means librknnrt.so from system loader",
-        cxxopts::value<std::string>()->default_value(""))(
         "confidence", "Detection confidence threshold",
         cxxopts::value<float>()->default_value(std::to_string(kDefaultConfidenceThreshold)))(
         "nms", "NMS IoU threshold", cxxopts::value<float>()->default_value(std::to_string(kDefaultNmsThreshold)))(
@@ -93,7 +91,6 @@ namespace signlang::handpose_det {
                 ? std::optional<std::string>{parsed_options["state-blackboard-service"].as<std::string>()}
                 : std::nullopt,
         .model_path = parsed_options["model"].as<std::string>(),
-        .rknn_runtime_library_path = parsed_options["rknn-runtime"].as<std::string>(),
         .confidence_threshold = confidence_threshold,
         .nms_threshold = nms_threshold,
         .subscriber_buffer_size = subscriber_buffer_size,

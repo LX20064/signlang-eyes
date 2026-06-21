@@ -48,7 +48,7 @@ auto main(int argc, char** argv) -> int {
     signlang::logging::initialize(options.logging);
     install_signal_handlers();
 
-    HandPoseModel model{options.model_path, options.rknn_runtime_library_path, options};
+    HandPoseModel model{options.model_path, options};
     HandPoseTransport transport{options.input_service_name, options.output_service_name, options.subscriber_buffer_size,
                                 options.max_detections};
     auto state_monitor = std::optional<IpcHandPoseStateMonitor>{};
