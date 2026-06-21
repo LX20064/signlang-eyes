@@ -110,6 +110,8 @@ install(FILES
     DESTINATION lib)
 
 install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/lib/aarch64/libspdlog.so.1.17.0
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/lib/aarch64/libspdlog.so.1.17
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/lib/aarch64/libspdlog.so
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/librga/lib/aarch64/librga.so
     DESTINATION lib)
