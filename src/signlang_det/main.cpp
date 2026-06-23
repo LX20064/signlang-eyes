@@ -34,7 +34,8 @@ namespace {
     const std::vector<signlang::signlang_det::FeatureVector>& window,
     const signlang::signlang_det::SignlangModel::InferenceResult& inference,
     const signlang::signlang_det::ProgramOptions& options,
-    const signlang::signlang_det::SignlangModel& model)
+    const signlang::signlang_det::SignlangModel& model,
+    bool recognized)
     -> signlang::signlang_det::SignlangResult
   {
     using signlang::signlang_det::SignlangResult;
@@ -48,10 +49,27 @@ namespace {
     result.sequence_length = options.sequence_length;
     result.overlap_ratio = options.overlap_ratio;
     result.inference_time_ms = inference.inference_time_ms;
+    result.recognized = recognized;
     result.gesture_id = inference.gesture_id;
+    result.confidence = inference.confidence;
+    result.second_confidence = inference.second_confidence;
+    result.confidence_margin = inference.confidence - inference.second_confidence;
+    result.distance = inference.distance;
 
     const auto* gesture_name = model.get_gesture_name(inference.gesture_id);
     copy_string(gesture_name, result.gesture_name);
+
+    const auto candidate_count = std::min<std::size_t>(
+      inference.candidates.size(), signlang::signlang_det::kMaxGestureCandidates);
+    result.candidate_count = static_cast<std::uint32_t>(candidate_count);
+    for (std::size_t index = 0; index < candidate_count; ++index) {
+      const auto& candidate = inference.candidates[index];
+      auto& output_candidate = result.candidates[index];
+      output_candidate.gesture_id = candidate.gesture_id;
+      output_candidate.confidence = candidate.confidence;
+      output_candidate.distance = candidate.distance;
+      copy_string(model.get_gesture_name(candidate.gesture_id), output_candidate.gesture_name);
+    }
 
     return result;
   }
@@ -93,6 +111,11 @@ namespace {
                                options.prototypes_path,
                                options.npu_core_mask,
                                options.motion_weight, options.dtw_window_ratio};
+    if (model.expected_sequence_length() != options.sequence_length) {
+      throw std::runtime_error("Configured sequence length " + std::to_string(options.sequence_length) +
+                               " does not match model sequence length " +
+                               std::to_string(model.expected_sequence_length()));
+    }
     spdlog::info("Sign language model loaded successfully");
 
     auto publisher = IpcSignlangPublisher{options.output_service_name};
@@ -141,22 +164,19 @@ namespace {
       try {
         const auto inference_result = model.infer(*window);
 
-        // Apply confidence threshold
-        if (inference_result.confidence < options.confidence_threshold) {
-          next_window_end_seq = window_end_seq + hop_frames;
-          continue;
-        }
-
-        // Apply confidence margin check (reject if top1 and top2 are too close)
+        auto recognized = inference_result.recognized &&
+          inference_result.confidence >= options.confidence_threshold;
         const auto margin = inference_result.confidence - inference_result.second_confidence;
         if (margin < options.confidence_margin) {
-          next_window_end_seq = window_end_seq + hop_frames;
-          continue;
+          recognized = false;
         }
 
-        const auto result = build_result(*window, inference_result, options, model);
-        spdlog::info("Sign language detected: {} (confidence: {:.2f})",
-                     model.get_gesture_name(inference_result.gesture_id), inference_result.confidence);
+        const auto result = build_result(*window, inference_result, options, model, recognized);
+        if (recognized) {
+          spdlog::info("Sign language detected: {} (confidence: {:.2f}, margin: {:.2f})",
+                       model.get_gesture_name(inference_result.gesture_id),
+                       inference_result.confidence, margin);
+        }
         publisher.publish(result);
 
         next_window_end_seq = window_end_seq + hop_frames;

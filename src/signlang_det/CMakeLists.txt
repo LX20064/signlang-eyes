@@ -3,6 +3,7 @@ set(SIGNLANG_DET_MODEL_DIR
         CACHE PATH "Directory containing sign language LSTM RKNN model assets")
 set(SIGNLANG_DET_MODEL_FILE ${SIGNLANG_DET_MODEL_DIR}/signlang.rknn)
 set(SIGNLANG_DET_LABEL_MAP_FILE ${SIGNLANG_DET_MODEL_DIR}/labels.txt)
+set(SIGNLANG_DET_PROTOTYPES_FILE ${SIGNLANG_DET_MODEL_DIR}/prototypes.bin)
 set(SIGNLANG_DET_INSTALL_MODEL_DIR models/signlang)
 
 if(NOT TARGET signlang::rknn_runtime)
@@ -12,7 +13,8 @@ endif()
 
 foreach(required_file
         ${SIGNLANG_DET_MODEL_FILE}
-        ${SIGNLANG_DET_LABEL_MAP_FILE})
+        ${SIGNLANG_DET_LABEL_MAP_FILE}
+        ${SIGNLANG_DET_PROTOTYPES_FILE})
     if(NOT EXISTS ${required_file})
         message(WARNING "Missing signlang_det asset (will skip): ${required_file}")
         return()
@@ -50,10 +52,14 @@ add_custom_command(TARGET signlang_eyes_signlang_det POST_BUILD
         "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/signlang.rknn"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SIGNLANG_DET_LABEL_MAP_FILE}
-        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/labels.txt")
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/labels.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${SIGNLANG_DET_PROTOTYPES_FILE}
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/prototypes.bin")
 
 install(TARGETS signlang_eyes_signlang_det DESTINATION bin)
 install(FILES
         ${SIGNLANG_DET_MODEL_FILE}
         ${SIGNLANG_DET_LABEL_MAP_FILE}
+        ${SIGNLANG_DET_PROTOTYPES_FILE}
         DESTINATION ${SIGNLANG_DET_INSTALL_MODEL_DIR})

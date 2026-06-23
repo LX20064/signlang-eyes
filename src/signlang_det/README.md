@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **signlang_det** module performs real-time dual-hand sign language recognition using a hybrid BiLSTM + DTW (Dynamic Time Warping) architecture. It subscribes to hand pose detection results, extracts 126-dimensional spatial-temporal features, encodes them with a BiLSTM on the RKNN NPU, and matches the resulting embeddings against pre-recorded gesture prototypes using DTW for speed-invariant recognition.
+The **signlang_det** module performs real-time dual-hand sign language recognition using a hybrid BiLSTM + DTW (Dynamic Time Warping) architecture. It subscribes to hand pose detection results, extracts 168-dimensional spatial-temporal features, encodes them with a BiLSTM on the RKNN NPU, and matches the resulting embeddings against pre-recorded gesture prototypes using DTW for speed-invariant recognition.
 
 - **Executable**: `signlang_det` (installed under `bin/`)
 - **IPC Pattern**: Publish-Subscribe (subscriber + publisher) + Event/Blackboard (state control)
@@ -33,7 +33,7 @@ When both state gate services are provided, sign language recognition reads the 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--model` / `-m` | `models/signlang/signlang.rknn` | BiLSTM encoder RKNN model path |
-| `--label-map` | `models/signlang/labels.txt` | Gesture label mapping file (one label per line) |
+| `--label-map` | `models/signlang/labels.txt` | Gesture label mapping file (`name` or `id name` per line) |
 | `--prototypes` | `models/signlang/prototypes.bin` | Encoded gesture prototype database (binary format) |
 
 ### Feature & Window
@@ -67,15 +67,16 @@ When both state gate services are provided, sign language recognition reads the 
 
 ## Technical Details
 
-### Feature Extraction (126-Dimensional)
+### Feature Extraction (168-Dimensional)
 
-Each frame produces a 126-dim feature vector (2 hands × 21 keypoints × 3 channels):
+Each frame produces a 168-dim feature vector (2 hands × 21 keypoints × 4 channels):
 
 | Channel | Formula | Description |
 |---------|---------|-------------|
 | `normalized_x` | `(kp.x − wrist.x) / scale` | X-coordinate relative to wrist, normalized by max wrist-relative distance |
 | `normalized_y` | `(kp.y − wrist.y) / scale` | Y-coordinate relative to wrist, same normalization scale |
-| `velocity_magnitude` | `‖(x_t, y_t) − (x_{t−1}, y_{t−1})‖ × motion_weight` | Frame-to-frame motion speed, scaled by motion weight |
+| `normalized_z` | `(kp.z − wrist.z) / scale` | Z-coordinate relative to wrist, same normalization scale |
+| `velocity_magnitude` | `‖(x_t, y_t, z_t) − (x_{t−1}, y_{t−1}, z_{t−1})‖ × motion_weight` | Frame-to-frame 3D motion speed, scaled by motion weight |
 
 ### Hand Tracking
 
@@ -86,7 +87,7 @@ Each frame produces a 126-dim feature vector (2 hands × 21 keypoints × 3 chann
 
 ### BiLSTM Encoder
 
-- **Input**: `[1, 30, 126]` — batch × sequence_length × feature_dim
+- **Input**: `[1, 30, 168]` — batch × sequence_length × feature_dim
 - **Output**: `[1, 30, 128]` — batch × sequence_length × frame_embedding_dim
 - **Runtime**: RKNN NPU (single forward pass, ~10-20ms)
 - **Architecture**: Bidirectional LSTM with 128 hidden units
@@ -97,6 +98,7 @@ Each frame produces a 126-dim feature vector (2 hands × 21 keypoints × 3 chann
 2. **Sakoe-Chiba Window**: `max(|Q|−|S|, round(max_len × window_ratio), 1)` — constrains alignment path
 3. **Path Normalization**: Accumulated DTW cost ÷ number of alignment steps
 4. **Confidence**: `1 / (1 + normalized_dtw_distance)` — distance-to-confidence conversion
+5. **Multiple Samples**: Each gesture can hold multiple independent prototype samples; the matcher scores a gesture by its best sample.
 
 ### Dual-Threshold Filtering
 
@@ -141,7 +143,7 @@ FeatureExtractor
     │       ▼
     │   Velocity Computation
     │       │
-    └─► 126-dim Feature Vector
+    └─► 168-dim Feature Vector
             │
             ▼
     KeypointRingBuffer
@@ -239,7 +241,7 @@ FeatureExtractor
 | `main.cpp` | Entry point; dual-thread orchestration (receiver + inference) |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `signlang_model.{cpp,hpp}` | BiLSTM RKNN model + DTW matching engine |
-| `feature_extractor.{cpp,hpp}` | Hand tracking and 126-dim feature extraction |
+| `feature_extractor.{cpp,hpp}` | Hand tracking and 168-dim feature extraction |
 | `keypoint_ring_buffer.{cpp,hpp}` | Thread-safe circular buffer for sliding windows |
 | `iceoryx_gateway.{cpp,hpp}` | iceoryx2 subscriber, publisher, state control |
 | `signlang_result.{cpp,hpp}` | IPC message definitions |
@@ -249,7 +251,15 @@ FeatureExtractor
 ### SignlangResult (Published)
 
 ```cpp
+struct GestureCandidate {
+    std::uint32_t gesture_id;
+    float confidence;
+    float distance;
+    std::array<char, kMaxGestureNameLength> gesture_name;
+};
+
 struct SignlangResult {
+    std::uint64_t sequence_number;
     std::uint64_t timestamp_ns;
     std::uint64_t window_start_sequence;
     std::uint64_t window_end_sequence;
@@ -259,17 +269,37 @@ struct SignlangResult {
     bool recognized;
     std::uint32_t gesture_id;
     float confidence;
-    std::array<char, kMaxGestureLabelLength> label;
+    float second_confidence;
+    float confidence_margin;
+    float distance;
+    std::array<char, kMaxGestureNameLength> gesture_name;
     std::uint32_t candidate_count;
-    std::array<GestureCandidate, kMaxCandidates> candidates;
-};
-
-struct GestureCandidate {
-    std::uint32_t gesture_id;
-    float confidence;
-    std::array<char, kMaxGestureLabelLength> label;
+    std::array<GestureCandidate, kMaxGestureCandidates> candidates;
 };
 ```
+
+### Prototype Database Format
+
+`prototypes.bin` is the runtime vocabulary boundary. Adding or removing signs should update this file and the label map, not the BiLSTM encoder.
+
+Versioned format:
+
+```text
+char[8]  magic = "SLDTWPB\0"
+uint32   version = 1
+uint32   embedding_dim
+uint32   gesture_count
+
+for each gesture:
+  uint32 gesture_id
+  uint32 sample_count
+  for each sample:
+    uint32 frame_count
+    uint32 embedding_dim
+    float  frames[frame_count][embedding_dim]
+```
+
+The loader only accepts this versioned format. Invalid magic, unsupported versions, empty gestures, or embedding-dimension mismatches fail startup.
 
 ## Performance Characteristics
 
