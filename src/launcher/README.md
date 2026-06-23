@@ -28,7 +28,7 @@ See `conf/conf.toml` for the default configuration with all available keys docum
 - `[video_frontend]` — Video capture parameters
 - `[speech_asr]` — Whisper ASR parameters
 - `[env_sound_det]` — YAMNet environmental sound detection parameters
-- `[handpose_det]` — YOLOv8 hand pose detection parameters
+- `[handpose_det]` — MediaPipe hand pose detection parameters
 - `[signlang_det]` — Sign language recognition parameters
 
 ## Technical Details
@@ -155,7 +155,7 @@ install/
 └── models/
     ├── whisper/
     ├── yamnet/
-    ├── yolov8n-handpose/
+    ├── mediapipe/
     └── signlang/
 ```
 

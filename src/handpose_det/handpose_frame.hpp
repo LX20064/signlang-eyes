@@ -13,6 +13,7 @@ namespace signlang::handpose_det {
   struct HandPoseKeypoint {
     float x;
     float y;
+    float z;
     float confidence;
   };
 

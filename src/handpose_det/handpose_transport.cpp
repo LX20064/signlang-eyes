@@ -22,11 +22,11 @@ namespace signlang::handpose_det {
   } // namespace
 
   HandPoseTransport::HandPoseTransport(const std::string& input_service_name, const std::string& output_service_name,
-                                       std::uint64_t subscriber_buffer_size, std::uint32_t max_detections) :
+                                       std::uint64_t subscriber_buffer_size, std::uint32_t output_capacity) :
       node_{create_node()},
       subscriber_{create_video_subscriber(node_, input_service_name, subscriber_buffer_size)},
-      publisher_{create_handpose_publisher(node_, output_service_name, max_detections)}, max_detections_{
-                                                                                             max_detections} {}
+      publisher_{create_handpose_publisher(node_, output_service_name, output_capacity)}, output_capacity_{
+                                                                                              output_capacity} {}
 
   auto HandPoseTransport::wait_for_work() -> bool {
     return node_.wait(iox2::bb::Duration::from_millis(kWaitPeriodMs)).has_value();
@@ -65,7 +65,7 @@ namespace signlang::handpose_det {
   }
 
   auto HandPoseTransport::create_handpose_publisher(const iox2::Node<iox2::ServiceType::Ipc>& node,
-                                                    const std::string& service_name, std::uint32_t max_detections)
+                                                    const std::string& service_name, std::uint32_t output_capacity)
       -> iox2::Publisher<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>, HandPoseFrameMetadata> {
     auto service = node.service_builder(service_name_from_string(service_name))
                        .publish_subscribe<iox2::bb::Slice<HandPoseDetection>>()
@@ -77,7 +77,7 @@ namespace signlang::handpose_det {
 
     auto publisher = service.value()
                          .publisher_builder()
-                         .initial_max_slice_len(std::max<std::uint32_t>(1, max_detections))
+                         .initial_max_slice_len(std::max<std::uint32_t>(1, output_capacity))
                          .allocation_strategy(iox2::AllocationStrategy::Static)
                          .create();
     if (!publisher.has_value()) {
