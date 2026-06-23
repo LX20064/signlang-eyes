@@ -2,8 +2,7 @@ set(SIGNLANG_DET_MODEL_DIR
         ${SIGNLANG_MODEL_ROOT}/signlang
         CACHE PATH "Directory containing sign language LSTM RKNN model assets")
 set(SIGNLANG_DET_MODEL_FILE ${SIGNLANG_DET_MODEL_DIR}/signlang.rknn)
-set(SIGNLANG_DET_LABEL_MAP_FILE ${SIGNLANG_DET_MODEL_DIR}/labels.txt)
-set(SIGNLANG_DET_PROTOTYPES_FILE ${SIGNLANG_DET_MODEL_DIR}/prototypes.bin)
+set(SIGNLANG_DET_PROTOTYPES_FILE ${SIGNLANG_DET_MODEL_DIR}/prototypes.sqlite)
 set(SIGNLANG_DET_INSTALL_MODEL_DIR models/signlang)
 
 if(NOT TARGET signlang::rknn_runtime)
@@ -13,7 +12,6 @@ endif()
 
 foreach(required_file
         ${SIGNLANG_DET_MODEL_FILE}
-        ${SIGNLANG_DET_LABEL_MAP_FILE}
         ${SIGNLANG_DET_PROTOTYPES_FILE})
     if(NOT EXISTS ${required_file})
         message(WARNING "Missing signlang_det asset (will skip): ${required_file}")
@@ -38,6 +36,7 @@ target_include_directories(signlang_eyes_signlang_det PRIVATE
 
 target_link_libraries(signlang_eyes_signlang_det PRIVATE
         cxxopts::cxxopts
+        SQLiteCpp::SQLiteCpp
         spdlog::spdlog
         iceoryx2-cxx::shared-lib-cxx
         signlang::rknn_runtime
@@ -51,15 +50,11 @@ add_custom_command(TARGET signlang_eyes_signlang_det POST_BUILD
         ${SIGNLANG_DET_MODEL_FILE}
         "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/signlang.rknn"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${SIGNLANG_DET_LABEL_MAP_FILE}
-        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/labels.txt"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SIGNLANG_DET_PROTOTYPES_FILE}
-        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/prototypes.bin")
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/prototypes.sqlite")
 
 install(TARGETS signlang_eyes_signlang_det DESTINATION bin)
 install(FILES
         ${SIGNLANG_DET_MODEL_FILE}
-        ${SIGNLANG_DET_LABEL_MAP_FILE}
         ${SIGNLANG_DET_PROTOTYPES_FILE}
         DESTINATION ${SIGNLANG_DET_INSTALL_MODEL_DIR})

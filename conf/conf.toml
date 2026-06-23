@@ -60,8 +60,7 @@ npu_core = "2"
 [signlang_det]
 npu_core = "0"
 # model = "models/signlang/signlang.rknn"
-# label_map = "models/signlang/labels.txt"
-# prototypes = "models/signlang/prototypes.bin"
+# prototypes = "models/signlang/prototypes.sqlite"
 # sequence_length = 30             # Sliding window frame count
 # overlap_ratio = 0.2              # Window overlap ratio
 # min_confidence = 0.3             # Minimum keypoint confidence

@@ -45,8 +45,7 @@ namespace signlang::signlang_det {
                                        "iceoryx2 blackboard service name for global app state storage",
                                        cxxopts::value<std::string>())(
         "m,model", "RKNN BiLSTM encoder model path", cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
-        "label-map", "Gesture label map file", cxxopts::value<std::string>()->default_value(kDefaultLabelMapPath))(
-        "prototypes", "Gesture prototypes binary file",
+        "prototypes", "Gesture prototype SQLite database file",
         cxxopts::value<std::string>()->default_value(kDefaultPrototypesPath))(
         "sequence-length", "Sliding window frame count",
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultSequenceLength)))(
@@ -139,7 +138,6 @@ namespace signlang::signlang_det {
                 ? std::optional<std::string>{parsed_options["state-blackboard-service"].as<std::string>()}
                 : std::nullopt,
         .model_path = parsed_options["model"].as<std::string>(),
-        .label_map_path = parsed_options["label-map"].as<std::string>(),
         .prototypes_path = parsed_options["prototypes"].as<std::string>(),
         .sequence_length = sequence_length,
         .overlap_ratio = overlap_ratio,

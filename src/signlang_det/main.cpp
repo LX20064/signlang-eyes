@@ -107,8 +107,7 @@ namespace {
     using signlang::signlang_det::IpcSignlangPublisher;
     using signlang::signlang_det::IpcSignlangDetStateMonitor;
 
-    auto model = SignlangModel{options.model_path, options.label_map_path,
-                               options.prototypes_path,
+    auto model = SignlangModel{options.model_path, options.prototypes_path,
                                options.npu_core_mask,
                                options.motion_weight, options.dtw_window_ratio};
     if (model.expected_sequence_length() != options.sequence_length) {

@@ -33,8 +33,7 @@ When both state gate services are provided, sign language recognition reads the 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--model` / `-m` | `models/signlang/signlang.rknn` | BiLSTM encoder RKNN model path |
-| `--label-map` | `models/signlang/labels.txt` | Gesture label mapping file (`name` or `id name` per line) |
-| `--prototypes` | `models/signlang/prototypes.bin` | Encoded gesture prototype database (binary format) |
+| `--prototypes` | `models/signlang/prototypes.sqlite` | SQLite gesture vocabulary and encoded prototype database |
 
 ### Feature & Window
 
@@ -280,26 +279,45 @@ struct SignlangResult {
 
 ### Prototype Database Format
 
-`prototypes.bin` is the runtime vocabulary boundary. Adding or removing signs should update this file and the label map, not the BiLSTM encoder.
+`prototypes.sqlite` is the runtime vocabulary boundary. It stores labels and encoded prototype samples in one file, so adding or removing signs updates only this database, not the BiLSTM encoder.
 
-Versioned format:
+Required schema:
 
-```text
-char[8]  magic = "SLDTWPB\0"
-uint32   version = 1
-uint32   embedding_dim
-uint32   gesture_count
+```sql
+CREATE TABLE meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 
-for each gesture:
-  uint32 gesture_id
-  uint32 sample_count
-  for each sample:
-    uint32 frame_count
-    uint32 embedding_dim
-    float  frames[frame_count][embedding_dim]
+CREATE TABLE gestures (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gesture_id INTEGER NOT NULL,
+  frame_count INTEGER NOT NULL,
+  embedding_dim INTEGER NOT NULL,
+  dtype TEXT NOT NULL DEFAULT 'f32',
+  data BLOB NOT NULL,
+  weight REAL NOT NULL DEFAULT 1.0,
+  FOREIGN KEY (gesture_id) REFERENCES gestures(id)
+);
+
+CREATE INDEX idx_samples_gesture_id ON samples(gesture_id);
 ```
 
-The loader only accepts this versioned format. Invalid magic, unsupported versions, empty gestures, or embedding-dimension mismatches fail startup.
+Required metadata:
+
+```sql
+INSERT INTO meta(key, value) VALUES
+  ('schema_version', '1'),
+  ('embedding_dim', '128');
+```
+
+Each sample `data` BLOB stores contiguous `float32` values with shape `[frame_count, embedding_dim]`. The loader reads all enabled gestures and samples into memory at startup; DTW matching does not query SQLite during recognition.
 
 ## Performance Characteristics
 
@@ -376,8 +394,8 @@ iox2-list
 
 ### Gesture Not Recognized
 
-- Check if gesture is in label map: `cat models/signlang/labels.txt`
-- Verify prototype exists in database
+- Check if the gesture is enabled in `models/signlang/prototypes.sqlite`
+- Verify at least one sample exists for that gesture
 - Try longer sequence length: `--sequence-length 45`
 
 ### RKNN Initialization Failed

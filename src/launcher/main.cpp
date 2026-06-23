@@ -474,7 +474,6 @@ static auto build_signlang_det_args(const toml::table& cfg) -> std::vector<std::
 
   if (const auto* tbl = cfg["signlang_det"].as_table()) {
     add_opt_str(args, "--model", opt_string(*tbl, "model"));
-    add_opt_str(args, "--label-map", opt_string(*tbl, "label_map"));
     add_opt_str(args, "--prototypes", opt_string(*tbl, "prototypes"));
     add_opt_int(args, "--sequence-length", opt_int(*tbl, "sequence_length"));
     add_opt_double(args, "--overlap-ratio", opt_double(*tbl, "overlap_ratio"));

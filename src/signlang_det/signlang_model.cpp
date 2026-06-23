@@ -1,5 +1,6 @@
 #include "signlang_model.hpp"
 
+#include "SQLiteCpp.h"
 #include "spdlog/spdlog.h"
 
 #include <algorithm>
@@ -9,59 +10,22 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
 namespace signlang::signlang_det {
   namespace {
 
-    constexpr auto kPrototypeMagic = std::array<char, 8>{'S', 'L', 'D', 'T', 'W', 'P', 'B', '\0'};
-    constexpr auto kPrototypeVersion = std::uint32_t{1};
+    constexpr auto kPrototypeSchemaVersion = int{1};
+    constexpr const char* kFloat32Dtype = "f32";
 
-    template <typename T>
-    void read_binary(std::ifstream& file, T& value, const char* field_name) {
-      file.read(reinterpret_cast<char*>(&value), sizeof(T));
-      if (!file) {
-        throw std::runtime_error(std::string{"Failed to read prototype field: "} + field_name);
+    auto read_meta_int(SQLite::Database& database, const char* key, int default_value) -> int {
+      auto query = SQLite::Statement{database, "SELECT value FROM meta WHERE key = ?"};
+      query.bind(1, key);
+      if (!query.executeStep()) {
+        return default_value;
       }
-    }
-
-    auto trim(std::string value) -> std::string {
-      const auto first = value.find_first_not_of(" \t\r\n");
-      if (first == std::string::npos) {
-        return {};
-      }
-      const auto last = value.find_last_not_of(" \t\r\n");
-      return value.substr(first, last - first + 1);
-    }
-
-    auto parse_label_line(const std::string& line, std::uint32_t fallback_id) -> GestureLabel {
-      auto stream = std::istringstream{line};
-      auto first = std::string{};
-      stream >> first;
-      if (first.empty()) {
-        throw std::runtime_error("Empty gesture label line");
-      }
-
-      try {
-        std::size_t parsed_chars = 0;
-        const auto parsed_id = static_cast<std::uint32_t>(std::stoul(first, &parsed_chars, 10));
-        if (parsed_chars == first.size()) {
-          auto name = std::string{};
-          std::getline(stream, name);
-          name = trim(name);
-          if (name.empty()) {
-            throw std::runtime_error("Gesture label id is missing a name: " + line);
-          }
-          return GestureLabel{.id = parsed_id, .name = std::move(name)};
-        }
-      } catch (const std::invalid_argument&) {
-      } catch (const std::out_of_range&) {
-        throw std::runtime_error("Gesture label id is out of range: " + line);
-      }
-
-      return GestureLabel{.id = fallback_id, .name = trim(line)};
+      return std::stoi(query.getColumn(0).getString());
     }
 
     class RknnOutputReleaseGuard {
@@ -86,117 +50,102 @@ namespace signlang::signlang_det {
 
   } // namespace
 
-  auto GestureLabelMap::name_for(std::uint32_t gesture_id) const -> const char* {
-    if (const auto found = names_by_id.find(gesture_id); found != names_by_id.end()) {
-      return found->second.c_str();
-    }
-    return "unknown";
-  }
-
-  auto load_gesture_labels(const std::string& path) -> GestureLabelMap {
-    auto file = std::ifstream{path};
-    if (!file.is_open()) {
-      throw std::runtime_error("Failed to open label map file: " + path);
-    }
-
-    auto label_map = GestureLabelMap{};
-    auto line = std::string{};
-    auto fallback_id = std::uint32_t{0};
-    while (std::getline(file, line)) {
-      line = trim(line);
-      if (line.empty() || line.front() == '#') {
-        continue;
-      }
-
-      auto label = parse_label_line(line, fallback_id);
-      if (label_map.names_by_id.find(label.id) != label_map.names_by_id.end()) {
-        throw std::runtime_error("Duplicate gesture id in label map: " + std::to_string(label.id));
-      }
-      label_map.names_by_id.emplace(label.id, label.name);
-      label_map.labels.push_back(std::move(label));
-      ++fallback_id;
-    }
-
-    if (label_map.labels.empty()) {
-      throw std::runtime_error("Label map file is empty: " + path);
-    }
-
-    return label_map;
-  }
-
   auto PrototypeStore::load(const std::string& path) -> PrototypeStore {
-    auto file = std::ifstream{path, std::ios::binary};
-    if (!file.is_open()) {
-      throw std::runtime_error("Failed to open prototypes file: " + path);
-    }
-
+    auto database = SQLite::Database{path, SQLite::OPEN_READONLY};
     auto store = PrototypeStore{};
-    auto magic = std::array<char, kPrototypeMagic.size()>{};
-    file.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-    if (!file) {
-      throw std::runtime_error("Prototype file is too small: " + path);
+
+    if (!database.tableExists("meta") ||
+        !database.tableExists("gestures") ||
+        !database.tableExists("samples")) {
+      throw std::runtime_error("Prototype SQLite database is missing required tables: " + path);
     }
 
-    if (magic != kPrototypeMagic) {
-      throw std::runtime_error("Invalid prototype file magic: " + path);
+    const auto schema_version = read_meta_int(database, "schema_version", 0);
+    if (schema_version != kPrototypeSchemaVersion) {
+      throw std::runtime_error("Unsupported prototype SQLite schema version: " +
+                               std::to_string(schema_version));
     }
 
-    std::uint32_t version = 0;
-    read_binary(file, version, "version");
-    if (version != kPrototypeVersion) {
-      throw std::runtime_error("Unsupported prototype file version: " + std::to_string(version));
+    const auto meta_embedding_dim = read_meta_int(database, "embedding_dim", 0);
+    if (meta_embedding_dim <= 0) {
+      throw std::runtime_error("Prototype SQLite database has invalid embedding_dim metadata");
     }
+    store.embedding_dim_ = static_cast<std::uint32_t>(meta_embedding_dim);
 
-    std::uint32_t gesture_count = 0;
-    read_binary(file, store.embedding_dim_, "embedding_dim");
-    read_binary(file, gesture_count, "gesture_count");
+    auto gesture_query = SQLite::Statement{
+      database,
+      "SELECT id, name "
+      "FROM gestures "
+      "WHERE enabled != 0 "
+      "ORDER BY id"};
 
-    if (gesture_count == 0) {
-      throw std::runtime_error("Prototype file contains no gestures: " + path);
-    }
-
-    store.gestures_.reserve(gesture_count);
-    for (std::uint32_t gesture_index = 0; gesture_index < gesture_count; ++gesture_index) {
-      auto gesture = GesturePrototypeSet{};
-      std::uint32_t sample_count = 0;
-      read_binary(file, gesture.gesture_id, "gesture_id");
-      read_binary(file, sample_count, "sample_count");
-      if (sample_count == 0) {
-        throw std::runtime_error("Gesture " + std::to_string(gesture.gesture_id) + " has no prototype samples");
+    while (gesture_query.executeStep()) {
+      auto gesture = GesturePrototypeSet{
+        .gesture_id = static_cast<std::uint32_t>(gesture_query.getColumn(0).getUInt()),
+        .name = gesture_query.getColumn(1).getString(),
+        .samples = {},
+      };
+      if (gesture.name.empty()) {
+        throw std::runtime_error("Enabled gesture has an empty name: " +
+                                 std::to_string(gesture.gesture_id));
       }
 
-      gesture.samples.reserve(sample_count);
-      for (std::uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
-        auto sample = GesturePrototype{.sample_id = sample_index, .frames = {}};
-        std::uint32_t frame_count = 0;
-        std::uint32_t embedding_dim = 0;
-        read_binary(file, frame_count, "frame_count");
-        read_binary(file, embedding_dim, "embedding_dim");
+      auto sample_query = SQLite::Statement{
+        database,
+        "SELECT id, frame_count, embedding_dim, dtype, data "
+        "FROM samples "
+        "WHERE gesture_id = ? "
+        "ORDER BY id"};
+      sample_query.bind(1, gesture.gesture_id);
+
+      while (sample_query.executeStep()) {
+        const auto sample_id = static_cast<std::uint32_t>(sample_query.getColumn(0).getUInt());
+        const auto frame_count = static_cast<std::uint32_t>(sample_query.getColumn(1).getUInt());
+        const auto embedding_dim = static_cast<std::uint32_t>(sample_query.getColumn(2).getUInt());
+        const auto dtype = sample_query.getColumn(3).getString();
+        const auto* blob = static_cast<const float*>(sample_query.getColumn(4).getBlob());
+        const auto blob_bytes = sample_query.getColumn(4).getBytes();
+
         if (frame_count == 0 || embedding_dim == 0) {
           throw std::runtime_error("Prototype sample has invalid dimensions");
         }
-        if (store.embedding_dim_ == 0) {
-          store.embedding_dim_ = embedding_dim;
-        }
         if (embedding_dim != store.embedding_dim_) {
-          throw std::runtime_error("Prototype embedding dimension mismatch: expected " +
+          throw std::runtime_error("Prototype sample embedding dimension mismatch: expected " +
                                    std::to_string(store.embedding_dim_) + ", got " +
                                    std::to_string(embedding_dim));
         }
-
-        sample.frames.resize(frame_count);
-        for (auto& frame : sample.frames) {
-          frame.resize(embedding_dim);
-          file.read(reinterpret_cast<char*>(frame.data()),
-                    static_cast<std::streamsize>(embedding_dim * sizeof(float)));
-          if (!file) {
-            throw std::runtime_error("Failed to read prototype frame payload");
-          }
+        if (dtype != kFloat32Dtype) {
+          throw std::runtime_error("Unsupported prototype sample dtype: " + dtype);
         }
+
+        const auto expected_bytes =
+          static_cast<std::size_t>(frame_count) * embedding_dim * sizeof(float);
+        if (blob == nullptr || blob_bytes < 0 ||
+            static_cast<std::size_t>(blob_bytes) != expected_bytes) {
+          throw std::runtime_error("Prototype sample blob size mismatch for sample " +
+                                   std::to_string(sample_id));
+        }
+
+        auto sample = GesturePrototype{.sample_id = sample_id, .frames = EncodedSequence(frame_count)};
+        for (std::uint32_t frame_index = 0; frame_index < frame_count; ++frame_index) {
+          const auto* frame_begin = blob + (static_cast<std::size_t>(frame_index) * embedding_dim);
+          sample.frames[frame_index].assign(frame_begin, frame_begin + embedding_dim);
+        }
+
         gesture.samples.push_back(std::move(sample));
         ++store.sample_count_;
       }
+
+      if (gesture.samples.empty()) {
+        throw std::runtime_error("Enabled gesture has no prototype samples: " +
+                                 std::to_string(gesture.gesture_id));
+      }
+      store.names_by_id_.emplace(gesture.gesture_id, gesture.name);
       store.gestures_.push_back(std::move(gesture));
+    }
+
+    if (store.gestures_.empty()) {
+      throw std::runtime_error("Prototype SQLite database contains no enabled gestures: " + path);
     }
 
     return store;
@@ -216,6 +165,13 @@ namespace signlang::signlang_det {
 
   auto PrototypeStore::embedding_dim() const -> std::uint32_t {
     return embedding_dim_;
+  }
+
+  auto PrototypeStore::gesture_name(std::uint32_t gesture_id) const -> const char* {
+    if (const auto found = names_by_id_.find(gesture_id); found != names_by_id_.end()) {
+      return found->second.c_str();
+    }
+    return "unknown";
   }
 
   DtwMatcher::DtwMatcher(float window_ratio) : window_ratio_{window_ratio} {}
@@ -500,13 +456,11 @@ namespace signlang::signlang_det {
   }
 
   SignlangModel::SignlangModel(const std::string& model_path,
-                               const std::string& label_map_path,
                                const std::string& prototypes_path,
                                rknn_core_mask npu_core,
                                float motion_weight,
                                float dtw_window_ratio)
     : encoder_{std::make_unique<BilstmEncoder>(model_path, npu_core, motion_weight)},
-      labels_{load_gesture_labels(label_map_path)},
       prototypes_{PrototypeStore::load(prototypes_path)},
       matcher_{dtw_window_ratio}
   {
@@ -516,8 +470,8 @@ namespace signlang::signlang_det {
                                ", prototypes contain " + std::to_string(prototypes_.embedding_dim()));
     }
 
-    spdlog::info("Loaded {} sign labels and {} prototype samples across {} gestures",
-                 labels_.labels.size(), prototypes_.sample_count(), prototypes_.gesture_count());
+    spdlog::info("Loaded {} prototype samples across {} enabled gestures",
+                 prototypes_.sample_count(), prototypes_.gesture_count());
   }
 
   SignlangModel::~SignlangModel() = default;
@@ -527,7 +481,7 @@ namespace signlang::signlang_det {
   }
 
   auto SignlangModel::get_gesture_name(std::uint32_t gesture_id) const -> const char* {
-    return labels_.name_for(gesture_id);
+    return prototypes_.gesture_name(gesture_id);
   }
 
   auto SignlangModel::infer(const std::vector<FeatureVector>& sequence) -> InferenceResult {

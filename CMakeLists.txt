@@ -41,6 +41,24 @@ add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include)
 add_library(tomlplusplus::tomlplusplus ALIAS tomlplusplus)
 
+# Threads
+find_package(Threads REQUIRED)
+
+# SQLiteCpp
+add_library(sqlite3 STATIC IMPORTED GLOBAL)
+set_target_properties(sqlite3 PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SQLiteCpp/lib/aarch64/libsqlite3.a
+    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SQLiteCpp/include)
+add_library(SQLite::SQLite3 ALIAS sqlite3)
+
+add_library(SQLiteCpp STATIC IMPORTED GLOBAL)
+set_target_properties(SQLiteCpp PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SQLiteCpp/lib/aarch64/libSQLiteCpp.a
+    INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SQLiteCpp/include)
+target_link_libraries(SQLiteCpp INTERFACE SQLite::SQLite3 Threads::Threads ${CMAKE_DL_LIBS})
+add_library(SQLiteCpp::SQLiteCpp ALIAS SQLiteCpp)
+
+
 # spdlog
 add_library(spdlog SHARED IMPORTED GLOBAL)
 set_target_properties(spdlog PROPERTIES
@@ -61,7 +79,6 @@ set_target_properties(fftw3f PROPERTIES
 
 # System dependencies
 find_package(ALSA REQUIRED)
-find_package(Threads REQUIRED)
 
 # RKNN Runtime headers
 add_library(signlang_rknn_headers INTERFACE)

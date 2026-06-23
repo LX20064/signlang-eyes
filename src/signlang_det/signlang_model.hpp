@@ -15,18 +15,6 @@ namespace signlang::signlang_det {
 
   using EncodedSequence = std::vector<std::vector<float>>;
 
-  struct GestureLabel {
-    std::uint32_t id;
-    std::string name;
-  };
-
-  struct GestureLabelMap {
-    std::vector<GestureLabel> labels;
-    std::unordered_map<std::uint32_t, std::string> names_by_id;
-
-    auto name_for(std::uint32_t gesture_id) const -> const char*;
-  };
-
   struct GesturePrototype {
     std::uint32_t sample_id;
     EncodedSequence frames;
@@ -34,6 +22,7 @@ namespace signlang::signlang_det {
 
   struct GesturePrototypeSet {
     std::uint32_t gesture_id;
+    std::string name;
     std::vector<GesturePrototype> samples;
   };
 
@@ -45,9 +34,11 @@ namespace signlang::signlang_det {
     auto gesture_count() const -> std::size_t;
     auto sample_count() const -> std::size_t;
     auto embedding_dim() const -> std::uint32_t;
+    auto gesture_name(std::uint32_t gesture_id) const -> const char*;
 
   private:
     std::vector<GesturePrototypeSet> gestures_;
+    std::unordered_map<std::uint32_t, std::string> names_by_id_;
     std::uint32_t embedding_dim_{0};
     std::size_t sample_count_{0};
   };
@@ -105,8 +96,6 @@ namespace signlang::signlang_det {
     float motion_weight_;
   };
 
-  auto load_gesture_labels(const std::string& path) -> GestureLabelMap;
-
   class SignlangModel {
   public:
     struct InferenceResult {
@@ -120,7 +109,6 @@ namespace signlang::signlang_det {
     };
 
     SignlangModel(const std::string& model_path,
-                  const std::string& label_map_path,
                   const std::string& prototypes_path,
                   rknn_core_mask npu_core,
                   float motion_weight = 0.0F,
@@ -139,7 +127,6 @@ namespace signlang::signlang_det {
 
   private:
     std::unique_ptr<BilstmEncoder> encoder_;
-    GestureLabelMap labels_;
     PrototypeStore prototypes_;
     DtwMatcher matcher_;
   };

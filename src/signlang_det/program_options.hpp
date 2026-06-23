@@ -12,8 +12,7 @@
 namespace signlang::signlang_det {
 
 constexpr const char* kDefaultModelPath = "models/signlang/signlang.rknn";
-constexpr const char* kDefaultLabelMapPath = "models/signlang/labels.txt";
-constexpr const char* kDefaultPrototypesPath = "models/signlang/prototypes.bin";
+constexpr const char* kDefaultPrototypesPath = "models/signlang/prototypes.sqlite";
 constexpr auto kDefaultSequenceLength = std::uint32_t{30};
 constexpr auto kDefaultOverlapRatio = float{0.2F};
 constexpr auto kDefaultMinConfidence = float{0.3F};
@@ -29,7 +28,6 @@ struct ProgramOptions {
   std::optional<std::string> state_event_service_name;
   std::optional<std::string> state_blackboard_service_name;
   std::string model_path;
-  std::string label_map_path;
   std::string prototypes_path;
   std::uint32_t sequence_length;
   float overlap_ratio;
