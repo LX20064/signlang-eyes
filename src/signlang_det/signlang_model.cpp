@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -25,7 +26,17 @@ namespace signlang::signlang_det {
       if (!query.executeStep()) {
         return default_value;
       }
-      return std::stoi(query.getColumn(0).getString());
+
+      const auto value = query.getColumn(0).getString();
+      auto parsed = int{0};
+      const auto* begin = value.data();
+      const auto* end = begin + value.size();
+      const auto [parse_end, parse_error] = std::from_chars(begin, end, parsed);
+      if (parse_error != std::errc{} || parse_end != end) {
+        throw std::runtime_error("Prototype meta value for key '" + std::string{key} + "' must be an integer");
+      }
+
+      return parsed;
     }
 
     class RknnOutputReleaseGuard {
