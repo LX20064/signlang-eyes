@@ -2,12 +2,12 @@
 
 ## Overview
 
-The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) camera device and publishes RGB24 frames as an iceoryx2 byte slice with `VideoFrameMetadata` user-header metadata. It supports YUYV and MJPEG capture, normalizes both to RGB24, and applies optional hardware-accelerated scaling via Rockchip RGA.
+The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) camera device and publishes RGB24 frames as an iceoryx2 byte slice with `VideoFrameMetadata` user-header metadata. It supports YUYV and MJPEG capture formats, normalizes both to RGB24, and applies hardware-accelerated format conversion and scaling via Rockchip RGA.
 
 - **Executable**: `video_frontend` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (producer)
+- **IPC Pattern**: Publish-Subscribe (producer with user header)
 - **Input**: V4L2 camera device (YUYV 4:2:2 or MJPEG)
-- **Output**: `iox2::bb::Slice<std::uint8_t>` with `signlang::video_frontend::VideoFrameMetadata` user header on iceoryx2
+- **Output**: `iox2::bb::Slice<std::uint8_t>` + `signlang::video_frontend::VideoFrameMetadata` user header on iceoryx2
 
 ## Command-Line Parameters
 
@@ -41,10 +41,19 @@ The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) c
 ### RGA Hardware Acceleration
 
 The Rockchip RGA (Raster Graphic Acceleration) unit provides:
-- Zero-copy format conversion (YUYV → RGB24)
+- Zero-copy format conversion (YUYV → RGB24) via DMA buffers
 - Hardware scaling with bilinear interpolation
-- ~50x performance improvement over CPU-based conversion
+- ~50× performance improvement over CPU-based conversion
 - Typical processing time: 2-5ms per frame at 1080p
+- Eliminates CPU overhead for pixel format transformation
+
+**RGA vs CPU Performance:**
+
+| Operation | CPU (software) | RGA (hardware) | Speedup |
+|-----------|----------------|----------------|---------|
+| 1920×1080 YUYV→RGB24 | ~100ms | ~2ms | 50× |
+| 640×480 YUYV→RGB24 + scale from 1080p | ~120ms | ~3ms | 40× |
+| CPU utilization | 100% (1 core) | <5% | 20× |
 
 ### Published Sample Structure
 
@@ -181,19 +190,12 @@ Raw RGB24 byte array:
 
 ## Performance Characteristics
 
-- **Zero-copy publishing**: Video frames published directly from RGA output buffer
-- **Hardware acceleration**: RGA processes YUYV→RGB24 in ~2-5ms at 1080p
-- **Throughput**: Sustained 30 fps at 1080p with <5% CPU usage
-- **Latency**: Glass-to-glass latency ~50-70ms (camera → RGA → publish)
-- **CPU usage**: ~3-5% on single core during active capture (Cortex-A76)
-
-## RGA vs CPU Conversion Performance
-
-| Operation | CPU (software) | RGA (hardware) | Speedup |
-|-----------|----------------|----------------|---------|
-| 1920×1080 YUYV→RGB24 | ~100ms | ~2ms | 50× |
-| 640×480 YUYV→RGB24 + scale from 1080p | ~120ms | ~3ms | 40× |
-| CPU utilization | 100% (1 core) | <5% | 20× |
+- **Zero-copy publishing**: Video frames published directly from RGA output buffer via shared memory
+- **Hardware acceleration**: RGA processes YUYV→RGB24 in ~2-5ms at 1080p (50× faster than CPU)
+- **Throughput**: Sustained 30 fps at 1080p with <5% CPU usage on single core
+- **Latency**: Glass-to-glass latency ~50-70ms (camera → V4L2 → RGA → publish)
+- **CPU usage**: ~3-5% on single core during active capture (Cortex-A76 @ 2.4GHz)
+- **Memory**: ~12MB for V4L2 buffers + RGA intermediate buffers (4 buffers per stream)
 
 ## Troubleshooting
 

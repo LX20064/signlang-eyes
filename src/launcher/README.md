@@ -2,11 +2,11 @@
 
 ## Overview
 
-The **launcher** module is the system entry point that reads per-module configuration from a TOML file and spawns all 7 sub-modules as child processes. It monitors child health and performs a clean shutdown of the entire system if any module exits unexpectedly.
+The **launcher** module is the system entry point that reads per-module configuration from a TOML file and spawns all 7 sub-modules as child processes. It monitors child health via `waitpid()` and performs coordinated shutdown of the entire system on SIGINT/SIGTERM or if any module exits unexpectedly.
 
 - **Executable**: `launcher` (installed at root level, not under `bin/`)
 - **Input**: TOML configuration file (`conf/conf.toml` by default)
-- **Output**: Spawns and supervises all child modules
+- **Output**: Spawns and supervises all child modules with health monitoring
 
 ## Command-Line Parameters
 
@@ -17,19 +17,19 @@ The **launcher** module is the system entry point that reads per-module configur
 
 ## Configuration File
 
-The TOML file has one `[section]` per module. All keys are optional — omitted keys fall back to each module's built-in default. IPC service names are **not** configurable; they are hardcoded in the launcher.
+The TOML file has one `[section]` per module. All keys are optional — omitted keys fall back to each module's built-in default. IPC service names are **hardcoded** in the launcher and cannot be configured.
 
 See `conf/conf.toml` for the default configuration with all available keys documented as comments.
 
 ### Configuration Sections
 
 - `[logging]` — Global logging configuration (rotate_size, retain_files)
-- `[audio_frontend]` — Audio capture parameters
-- `[video_frontend]` — Video capture parameters
-- `[speech_asr]` — Whisper ASR parameters
-- `[env_sound_det]` — YAMNet environmental sound detection parameters
-- `[handpose_det]` — MediaPipe hand pose detection parameters
-- `[signlang_det]` — Sign language recognition parameters
+- `[audio_frontend]` — Audio capture parameters (device, capture_rate, capture_channels, etc.)
+- `[video_frontend]` — Video capture parameters (device, output_width, output_height, etc.)
+- `[speech_asr]` — Whisper ASR parameters (language, npu_core, window_ms, etc.)
+- `[env_sound_det]` — YAMNet environmental sound detection parameters (npu_core, score_threshold, etc.)
+- `[handpose_det]` — MediaPipe hand pose detection parameters (npu_core, confidence, output_hands, etc.)
+- `[signlang_det]` — Sign language recognition parameters (npu_core, sequence_length, confidence_threshold, etc.)
 
 ## Technical Details
 
@@ -65,7 +65,12 @@ Modules are started sequentially with a brief delay between each to ensure depen
 
 - **Launch**: `fork()` + `execvp()`. A `pipe2(…, O_CLOEXEC)` detects exec failures — if the child writes back `errno`, the parent knows the exec failed and aborts the entire launch
 - **Monitor**: `waitpid(-1, &status, WNOHANG)` in a 500ms loop. On any child exit (normal or abnormal), all remaining children receive `SIGTERM`
-- **Shutdown**: `SIGINT`/`SIGTERM` on the launcher itself triggers `SIGTERM` to all children, then `waitpid` to reap them
+- **Shutdown**: `SIGINT`/`SIGTERM` on the launcher itself triggers `SIGTERM` to all children, then `waitpid()` to reap them gracefully
+
+**Error handling:**
+- Exec failure: Detected via close-on-exec pipe, launcher aborts with error message
+- Child crash: Detected via `waitpid()`, all siblings sent `SIGTERM`, launcher exits with non-zero status
+- Missing executable: Caught at exec time, errno propagated to parent via pipe
 
 ### TOML Parsing
 
@@ -275,10 +280,12 @@ WantedBy=multi-user.target
 
 ## Performance Characteristics
 
-- **Startup time**: ~2-3s (module initialization + model loading)
-- **Monitor loop overhead**: <0.1% CPU (500ms sleep)
-- **Memory**: ~2MB (launcher process only, excludes child processes)
+- **Startup time**: ~2-3s (module initialization + RKNN model loading across all modules)
+- **Monitor loop overhead**: <0.1% CPU (500ms sleep between checks)
+- **Memory**: ~2MB launcher process only (excludes child processes)
 - **Child isolation**: Each module runs in separate process with independent address space
+- **Shutdown time**: <2s (SIGTERM propagation + graceful child exit)
+- **Process tree depth**: 2 levels (launcher → 7 child modules)
 
 ## Troubleshooting
 

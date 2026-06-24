@@ -2,13 +2,13 @@
 
 ## Overview
 
-The **speech_asr** module performs real-time speech-to-text recognition using an OpenAI Whisper base model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding-window log-Mel spectrogram pipeline, runs encoder-decoder inference, and publishes transcription results. Supports English and Chinese languages with configurable state-based enable/disable control.
+The **speech_asr** module performs real-time speech-to-text recognition using an OpenAI Whisper base encoder-decoder model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding-window log-Mel spectrogram pipeline, runs encoder-decoder inference, and publishes transcription results. Supports English and Chinese languages with state-based enable/disable control.
 
 - **Executable**: `speech_asr` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (subscriber + publisher) + Event/Blackboard (state control)
+- **IPC Pattern**: Publish-Subscribe (audio subscriber + result publisher) + Event/Blackboard (state control)
 - **Input**: `signlang::audio_frontend::AudioFrame` from iceoryx2
 - **Output**: `signlang::speech_asr::SpeechAsrResult` on iceoryx2
-- **Model**: Whisper base (encoder + decoder, RKNN-accelerated)
+- **Model**: Whisper base (encoder + decoder, 15s window, RKNN-accelerated)
 
 ## Command-Line Parameters
 
@@ -59,12 +59,14 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 
 ### Signal Processing Pipeline
 
-1. **Reflect Padding**: ±200 samples at each edge of the audio window
-2. **STFT**: 400-point FFT with Hann window, 160-sample hop length → 201 frequency bins
-3. **Mel Filtering**: 80-bin Mel filterbank maps 201-bin power spectra → Mel scale
+1. **Reflect Padding**: ±200 samples at each edge of the audio window (prevents edge artifacts)
+2. **STFT**: 400-point FFT with Hann window, 160-sample hop length → 201 frequency bins (FFTW3f)
+3. **Mel Filtering**: 80-bin Mel filterbank maps 201-bin power spectra to perceptual Mel scale
 4. **Log Compression & Normalization**: `log10(mel_value)`, threshold at max − 8 dB, scale to [−1, 1]
-5. **Encoder**: Single-pass encoding of the Mel spectrogram → encoded feature vector
-6. **Decoder**: Autoregressive token generation using prompt tokens `<|startoftranscript|> <language> <|transcribe|> <|notimestamps|>`, terminates on `<|endoftext|>` or max steps
+5. **Encoder**: Single-pass RKNN encoding of the Mel spectrogram → fixed-length feature vector
+6. **Decoder**: Autoregressive token generation with prompt `<|startoftranscript|> <language> <|transcribe|> <|notimestamps|>`, terminates on `<|endoftext|>` or max steps
+
+**Window dimensions**: 15s @ 16kHz = 240,000 samples → 80×1500 Mel spectrogram
 
 ### Thread Architecture
 
@@ -82,10 +84,12 @@ The module uses iceoryx2 `Node::wait()` for event-driven audio frame reception:
 ### State Control
 
 When both state gate services are provided, the module reads the current blackboard state at startup and uses the iceoryx2 Event + Blackboard pattern for enable/disable control:
-- When **disabled**: Polls for state changes and sleeps briefly between checks
-- When **enabled**: Non-blocking event check before each inference cycle
-- Without state gate services: Always enabled
-- Language is set at startup via `--language` flag
+- **Enabled states**: `Asr` (speech recognition mode)
+- **Disabled states**: `Normal`, `SignLanguageChat`, `SignLanguageAi`, `DangerousSound`
+- **When disabled**: Polls for state changes via non-blocking event check, minimal CPU usage
+- **When enabled**: Non-blocking event check before each inference cycle
+- **Without state gate services**: Always enabled (no state control)
+- **Language**: Set at startup via `--language` flag (not runtime-switchable)
 
 ### ASR Window Strategy
 
@@ -223,10 +227,11 @@ struct SpeechAsrResult {
 ## Performance Characteristics
 
 - **Inference time**: ~1.5-2.5s for 15s window on single NPU core (RK3588)
-- **Throughput**: Real-time factor ~0.15-0.20 (processes 15s in 2-3s)
-- **Memory**: ~150MB model footprint (encoder + decoder)
-- **CPU usage**: <5% on single core (event-driven, no polling)
-- **Latency**: ~2-3s glass-to-glass (15s window with 20% overlap)
+- **Throughput**: Real-time factor ~0.15-0.20 (processes 15s in 1.5-2.5s)
+- **Memory**: ~150MB model footprint (encoder + decoder RKNN models)
+- **CPU usage**: <5% on single core (event-driven, no polling; Cortex-A76 @ 2.4GHz)
+- **Latency**: ~2-3s glass-to-glass (15s window with 20% overlap = 12s hop)
+- **STFT computation**: ~50-100ms for 240k samples via FFTW3f
 
 ## Vocabulary Files
 

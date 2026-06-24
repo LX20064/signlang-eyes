@@ -2,13 +2,13 @@
 
 ## Overview
 
-The **signlang_det** module performs real-time dual-hand sign language recognition using a hybrid BiLSTM + DTW (Dynamic Time Warping) architecture. It subscribes to hand pose detection results, extracts 168-dimensional spatial-temporal features, encodes them with a BiLSTM on the RKNN NPU, and matches the resulting embeddings against pre-recorded gesture prototypes using DTW for speed-invariant recognition.
+The **signlang_det** module performs real-time dual-hand sign language recognition using a hybrid BiLSTM + DTW (Dynamic Time Warping) architecture. It subscribes to hand pose detection results, extracts 168-dimensional spatial-temporal features, encodes them with a BiLSTM on the RKNN NPU, and matches the resulting embeddings against pre-recorded gesture prototypes stored in an SQLite database using DTW for speed-invariant recognition.
 
 - **Executable**: `signlang_det` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (subscriber + publisher) + Event/Blackboard (state control)
+- **IPC Pattern**: Publish-Subscribe (handpose subscriber + result publisher) + Event/Blackboard (state control)
 - **Input**: `iox2::bb::Slice<signlang::handpose_det::HandPoseDetection>` with `HandPoseFrameMetadata` user header from iceoryx2
 - **Output**: `signlang::signlang_det::SignlangResult` on iceoryx2
-- **Model**: BiLSTM encoder (RKNN NPU) + DTW matching (CPU)
+- **Model**: BiLSTM encoder (128-dim embeddings, RKNN NPU) + DTW matching (CPU) against SQLite prototype database
 
 ## Command-Line Parameters
 
@@ -72,10 +72,15 @@ Each frame produces a 168-dim feature vector (2 hands × 21 keypoints × 4 chann
 
 | Channel | Formula | Description |
 |---------|---------|-------------|
-| `normalized_x` | `(kp.x − wrist.x) / scale` | X-coordinate relative to wrist, normalized by max wrist-relative distance |
+| `normalized_x` | `(kp.x − wrist.x) / scale` | X-coordinate relative to wrist, normalized by max wrist-relative distance across hand |
 | `normalized_y` | `(kp.y − wrist.y) / scale` | Y-coordinate relative to wrist, same normalization scale |
 | `normalized_z` | `(kp.z − wrist.z) / scale` | Z-coordinate relative to wrist, same normalization scale |
-| `velocity_magnitude` | `‖(x_t, y_t, z_t) − (x_{t−1}, y_{t−1}, z_{t−1})‖ × motion_weight` | Frame-to-frame 3D motion speed, scaled by motion weight |
+| `velocity_magnitude` | `‖(x_t, y_t, z_t) − (x_{t−1}, y_{t−1}, z_{t−1})‖ × motion_weight` | Frame-to-frame 3D motion speed, weighted by `--motion-weight` |
+
+**Normalization invariants:**
+- Translation: All coordinates relative to wrist (landmark 0)
+- Scale: Normalized by max distance from wrist to any other landmark
+- Position-only by default: `motion_weight = 0.0` (velocity disabled)
 
 ### Hand Tracking
 
@@ -93,16 +98,20 @@ Each frame produces a 168-dim feature vector (2 hands × 21 keypoints × 4 chann
 
 ### DTW Matching
 
-1. **Distance Metric**: Normalized Euclidean distance per frame pair: `√(∑(q_i − s_j)² / dim)`
-2. **Sakoe-Chiba Window**: `max(|Q|−|S|, round(max_len × window_ratio), 1)` — constrains alignment path
-3. **Path Normalization**: Accumulated DTW cost ÷ number of alignment steps
+1. **Distance Metric**: Normalized Euclidean distance per frame pair: `√(∑(q_i − s_j)² / embedding_dim)`
+2. **Sakoe-Chiba Window**: `max(|Q|−|S|, round(max_len × window_ratio), 1)` — constrains alignment path to prevent pathological warping
+3. **Path Normalization**: Accumulated DTW cost ÷ number of alignment steps (prevents length bias)
 4. **Confidence**: `1 / (1 + normalized_dtw_distance)` — distance-to-confidence conversion
-5. **Multiple Samples**: Each gesture can hold multiple independent prototype samples; the matcher scores a gesture by its best sample.
+5. **Multi-Sample Matching**: Each gesture can have multiple prototype samples; the matcher scores a gesture by its **best sample** (minimum DTW distance)
+
+**Vocabulary boundary:** SQLite database `prototypes.sqlite` stores all gesture labels and their encoded prototype samples. Adding/removing signs updates only this database, not the BiLSTM encoder model.
 
 ### Dual-Threshold Filtering
 
-1. **Confidence Threshold**: Reject if `top1_confidence < confidence_threshold`
-2. **Margin Filter**: Reject if `top1_confidence − top2_confidence < confidence_margin` (prevents ambiguous gestures)
+1. **Confidence Threshold**: Reject if `top1_confidence < confidence_threshold` (default 0.6)
+2. **Margin Filter**: Reject if `top1_confidence − top2_confidence < confidence_margin` (default 0.1)
+
+**Rationale:** Prevents ambiguous gestures where multiple classes have similar scores. Both thresholds must pass for a valid recognition.
 
 ### Event-Driven Subscription
 
@@ -279,9 +288,9 @@ struct SignlangResult {
 
 ### Prototype Database Format
 
-`prototypes.sqlite` is the runtime vocabulary boundary. It stores labels and encoded prototype samples in one file, so adding or removing signs updates only this database, not the BiLSTM encoder.
+`prototypes.sqlite` is the runtime vocabulary boundary. It stores gesture labels and encoded prototype samples in a single file, so adding or removing signs updates only this database, not the BiLSTM encoder model.
 
-Required schema:
+**Required schema:**
 
 ```sql
 CREATE TABLE meta (
@@ -309,7 +318,7 @@ CREATE TABLE samples (
 CREATE INDEX idx_samples_gesture_id ON samples(gesture_id);
 ```
 
-Required metadata:
+**Required metadata:**
 
 ```sql
 INSERT INTO meta(key, value) VALUES
@@ -317,16 +326,20 @@ INSERT INTO meta(key, value) VALUES
   ('embedding_dim', '128');
 ```
 
-Each sample `data` BLOB stores contiguous `float32` values with shape `[frame_count, embedding_dim]`. The loader reads all enabled gestures and samples into memory at startup; DTW matching does not query SQLite during recognition.
+**Sample storage format:**
+- Each sample `data` BLOB stores contiguous `float32` values with shape `[frame_count, embedding_dim]`
+- Row-major layout: `[frame0_emb0, frame0_emb1, ..., frame0_emb127, frame1_emb0, ...]`
+- The loader reads all enabled gestures and samples into memory at startup
+- DTW matching does not query SQLite during recognition (all-in-memory operation)
 
 ## Performance Characteristics
 
 - **BiLSTM inference time**: ~10-20ms for 30-frame window on single NPU core (RK3588)
-- **DTW matching time**: ~5-15ms per prototype (CPU, depends on prototype count)
-- **Total latency**: ~50-100ms per recognition (30-frame window at 30 fps)
-- **Memory**: ~12MB model footprint + prototype database
-- **CPU usage**: <5% on single core (event-driven, no polling)
-- **Recognition rate**: ~10-12 recognitions per second with 20% overlap
+- **DTW matching time**: ~5-15ms per prototype (CPU, depends on prototype count and sequence length)
+- **Total latency**: ~50-100ms per recognition (30-frame window @ 30 fps = 1s)
+- **Memory**: ~12MB model footprint + SQLite prototype database (~1-5MB depending on vocabulary size)
+- **CPU usage**: <5% on single core (event-driven, no polling; Cortex-A76 @ 2.4GHz)
+- **Recognition rate**: ~10-12 recognitions per second with 20% overlap (0.8s hop)
 
 ## Recognition Tuning Guidelines
 

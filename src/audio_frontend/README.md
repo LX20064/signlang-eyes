@@ -2,10 +2,10 @@
 
 ## Overview
 
-The **audio_frontend** module captures raw PCM audio from an ALSA audio device (e.g., microphone) and publishes it as `AudioFrame` messages over an iceoryx2 publish-subscribe service. It supports channel downmixing, sample-rate conversion, and optional sound source localization.
+The **audio_frontend** module captures raw PCM audio from an ALSA audio device and publishes it as `AudioFrame` messages over an iceoryx2 publish-subscribe service. It supports channel downmixing, sample-rate conversion, and TDOA-based sound source localization for multi-channel input.
 
 - **Executable**: `audio_frontend` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (producer)
+- **IPC Pattern**: Publish-Subscribe (producer) + Blackboard (localization results)
 - **Input**: ALSA capture device (PCM, 16-bit signed integer)
 - **Output**: `signlang::audio_frontend::AudioFrame` on iceoryx2
 
@@ -36,14 +36,13 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device (
 
 ### Sound Source Channel Proximity
 
-When `--localization-blackboard` is set, the module estimates which captured channel is closest to the active sound source before any downmixing or resampling. The result is written to a single-entry iceoryx2 blackboard using `SoundSourceLocalizationKey{.id = 0}`.
+When `--localization-blackboard` is set, the module estimates which captured channel is closest to the active sound source before downmixing or resampling. The result is written to a single-entry iceoryx2 blackboard using `SoundSourceLocalizationKey{.id = 0}`.
 
-- TDOA (Time Difference of Arrival) is estimated from pairwise normalized cross-correlation over the latest capture window
-- RMS energy is used as an auxiliary score when correlation is weak or channels are close
-- `--localization-tdoa-weight` and `--localization-rms-weight` configure fusion and must sum to 1.0
-- `proximity[ch]` is normalized to sum to 1.0 across active channels
-- `strongest_channel` is the channel with the highest fused proximity score
-- `valid == false` means the frame is too quiet or unusable
+- **TDOA (Time Difference of Arrival)**: Estimated from pairwise normalized cross-correlation (FFTW3f) over the capture window
+- **RMS energy**: Auxiliary score when correlation is weak or channels are spatially close
+- **Fusion weights**: `--localization-tdoa-weight` and `--localization-rms-weight` (must sum to 1.0)
+- **Output**: `proximity[ch]` normalized to sum to 1.0; `strongest_channel` is the channel with highest fused score
+- **Validity**: `valid == false` when the frame is too quiet or correlation fails
 
 The launcher enables this automatically on the hardcoded `audio_source_localization` blackboard service.
 
@@ -170,7 +169,8 @@ struct SoundSourceLocalization {
 
 ## Performance Characteristics
 
-- **Zero-copy publishing**: Audio samples published directly from capture buffer when no processing is needed
-- **Event-driven**: No polling loops, responds immediately to ALSA buffer availability
+- **Zero-copy publishing**: Audio samples published directly from capture buffer when no resampling/mixing is needed
+- **Event-driven**: No polling loops; responds immediately to ALSA buffer availability via `snd_pcm_wait()`
 - **Low latency**: Typical glass-to-glass latency < 100ms at 50ms period
-- **CPU usage**: ~5-10% on single core during active capture (Cortex-A76)
+- **CPU usage**: ~5-10% on single core during active capture (Cortex-A76 @ 2.4GHz)
+- **Cross-correlation**: FFTW3f accelerates TDOA estimation (~2-5ms for stereo 16kHz 100ms window)
