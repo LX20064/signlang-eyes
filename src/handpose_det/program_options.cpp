@@ -15,12 +15,37 @@ namespace signlang::handpose_det {
       }
     }
 
+    auto parse_core_mask(const std::string& value) -> rknn_core_mask {
+      if (value == "auto") {
+        return RKNN_NPU_CORE_AUTO;
+      }
+      if (value == "0") {
+        return RKNN_NPU_CORE_0;
+      }
+      if (value == "1") {
+        return RKNN_NPU_CORE_1;
+      }
+      if (value == "2") {
+        return RKNN_NPU_CORE_2;
+      }
+      if (value == "0_1") {
+        return RKNN_NPU_CORE_0_1;
+      }
+      if (value == "0_1_2") {
+        return RKNN_NPU_CORE_0_1_2;
+      }
+      if (value == "all") {
+        return RKNN_NPU_CORE_ALL;
+      }
+      throw std::runtime_error("Unsupported NPU core value: " + value);
+    }
+
   } // namespace
 
   auto parse_program_options(int argc, char** argv) -> ProgramOptionsParseResult {
     cxxopts::Options options{
         "signlang_eyes_handpose_det",
-        "Subscribe video frames from iceoryx2, run YOLOv8 hand pose on RKNN NPU, and publish hand keypoints."};
+        "Subscribe video frames from iceoryx2, run MediaPipe palm and hand landmark RKNN models, and publish hand keypoints."};
 
     options.add_options()("i,input-service", "Upstream video iceoryx2 service name", cxxopts::value<std::string>())(
         "o,output-service", "Output handpose iceoryx2 service name", cxxopts::value<std::string>())(
@@ -28,18 +53,24 @@ namespace signlang::handpose_det {
         cxxopts::value<std::string>())("state-blackboard-service",
                                        "iceoryx2 blackboard service name for global app state storage",
                                        cxxopts::value<std::string>())(
-        "m,model", "RKNN model path", cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
+        "m,model", "Palm detector RKNN model path",
+        cxxopts::value<std::string>()->default_value(kDefaultPalmDetectorModelPath))(
+        "landmark-model", "Hand landmark RKNN model path",
+        cxxopts::value<std::string>()->default_value(kDefaultLandmarkModelPath))(
         "confidence", "Detection confidence threshold",
         cxxopts::value<float>()->default_value(std::to_string(kDefaultConfidenceThreshold)))(
-        "nms", "NMS IoU threshold", cxxopts::value<float>()->default_value(std::to_string(kDefaultNmsThreshold)))(
         "subscriber-buffer", "iceoryx2 subscriber queue size",
         cxxopts::value<std::uint64_t>()->default_value(std::to_string(kDefaultSubscriberBufferSize)))(
         "keypoints", "Expected keypoint count per detection",
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultKeypointCount)))(
-        "max-detections", "Maximum detections published per frame",
-        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultMaxDetections)))(
+        "output-hands", "Number of hands published per frame",
+        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultOutputHands)))(
         "npu-core", "RK3588 NPU core mask: auto,0,1,2,0_1,0_1_2,all",
-        cxxopts::value<std::string>()->default_value("auto"))("verbose", "Print model tensor details")("h,help",
+        cxxopts::value<std::string>()->default_value("auto"))(
+        "palm-npu-core", "Palm detector NPU core mask; defaults to --npu-core",
+        cxxopts::value<std::string>())(
+        "landmark-npu-core", "Hand landmark NPU core mask; defaults to --npu-core",
+        cxxopts::value<std::string>())("verbose", "Print model tensor details")("h,help",
                                                                                                        "Print usage");
     signlang::logging::add_cli_options(options);
 
@@ -61,9 +92,7 @@ namespace signlang::handpose_det {
     }
 
     const auto confidence_threshold = parsed_options["confidence"].as<float>();
-    const auto nms_threshold = parsed_options["nms"].as<float>();
     validate_threshold(confidence_threshold, "confidence");
-    validate_threshold(nms_threshold, "nms");
 
     const auto subscriber_buffer_size = parsed_options["subscriber-buffer"].as<std::uint64_t>();
     if (subscriber_buffer_size == 0) {
@@ -75,10 +104,21 @@ namespace signlang::handpose_det {
       throw std::runtime_error("--keypoints must be greater than 0");
     }
 
-    const auto max_detections = parsed_options["max-detections"].as<std::uint32_t>();
-    if (max_detections == 0) {
-      throw std::runtime_error("--max-detections must be greater than 0");
+    const auto output_hands = parsed_options["output-hands"].as<std::uint32_t>();
+    if (output_hands == 0) {
+      throw std::runtime_error("--output-hands must be greater than 0");
     }
+    if (output_hands > kMaxHandPoseDetections) {
+      throw std::runtime_error("--output-hands exceeds handpose payload capacity");
+    }
+
+    const auto default_npu_core = parsed_options["npu-core"].as<std::string>();
+    const auto palm_npu_core = parsed_options.count("palm-npu-core") != 0
+        ? parsed_options["palm-npu-core"].as<std::string>()
+        : default_npu_core;
+    const auto landmark_npu_core = parsed_options.count("landmark-npu-core") != 0
+        ? parsed_options["landmark-npu-core"].as<std::string>()
+        : default_npu_core;
 
     return ProgramOptionsParseResult{ProgramOptions{
         .input_service_name = parsed_options["input-service"].as<std::string>(),
@@ -90,13 +130,14 @@ namespace signlang::handpose_det {
             has_state_blackboard_service
                 ? std::optional<std::string>{parsed_options["state-blackboard-service"].as<std::string>()}
                 : std::nullopt,
-        .model_path = parsed_options["model"].as<std::string>(),
+        .palm_detector_model_path = parsed_options["model"].as<std::string>(),
+        .landmark_model_path = parsed_options["landmark-model"].as<std::string>(),
         .confidence_threshold = confidence_threshold,
-        .nms_threshold = nms_threshold,
         .subscriber_buffer_size = subscriber_buffer_size,
         .keypoint_count = keypoint_count,
-        .max_detections = max_detections,
-        .npu_core_mask = parsed_options["npu-core"].as<std::string>(),
+        .output_hands = output_hands,
+        .palm_detector_npu_core_mask = parse_core_mask(palm_npu_core),
+        .landmark_npu_core_mask = parse_core_mask(landmark_npu_core),
         .verbose = parsed_options.count("verbose") != 0,
         .logging = signlang::logging::parse_cli_options(parsed_options),
     }};

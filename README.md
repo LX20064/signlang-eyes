@@ -28,7 +28,7 @@ Modular architecture using iceoryx2 zero-copy IPC for high-performance inter-pro
         ▼                        │
 ┌──────────────────┐             │
 │  handpose_det    │─────────────┤
-│  (YOLOv8 hand)   │             │
+│ (MediaPipe hand) │             │
 └──────────────────┘             │
         │                        │
         ▼                        │
@@ -44,7 +44,7 @@ Modular architecture using iceoryx2 zero-copy IPC for high-performance inter-pro
 - **video_frontend**: V4L2 camera capture with RGA hardware-accelerated YUYV→RGB24 conversion and scaling
 - **speech_asr**: Whisper speech recognition with sliding window for Chinese/English
 - **env_sound_det**: YAMNet environmental sound detection with threshold-based hazardous sound alerts
-- **handpose_det**: YOLOv8 hand keypoint detection, tracking up to 2 hands
+- **handpose_det**: MediaPipe palm detection and hand landmark recognition with fixed hand-slot output
 - **signlang_det**: Sign language recognition using DTW temporal matching
 - **state_machine**: Global state coordinator managing module interactions
 - **launcher**: Unified launcher loading all modules from TOML configuration
@@ -125,7 +125,7 @@ install/
 └── models/           # AI model files
     ├── whisper/
     ├── yamnet/
-    ├── yolov8n-handpose/
+    ├── mediapipe/
     └── signlang/
 ```
 
@@ -240,7 +240,7 @@ Detailed documentation for each module:
 - [video_frontend](src/video_frontend/README.md) - Video capture and hardware acceleration
 - [speech_asr](src/speech_asr/README.md) - Whisper speech recognition
 - [env_sound_det](src/env_sound_det/README.md) - YAMNet environmental sound detection
-- [handpose_det](src/handpose_det/README.md) - YOLOv8 hand keypoint detection
+- [handpose_det](src/handpose_det/README.md) - MediaPipe hand pose detection
 - [signlang_det](src/signlang_det/README.md) - DTW sign language recognition
 - [state_machine](src/state_machine/README.md) - Global state management
 - [launcher](src/launcher/README.md) - Process launch and monitoring

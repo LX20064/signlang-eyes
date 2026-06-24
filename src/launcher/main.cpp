@@ -450,11 +450,13 @@ static auto build_handpose_det_args(const toml::table& cfg) -> std::vector<std::
 
   if (const auto* tbl = cfg["handpose_det"].as_table()) {
     add_opt_str(args, "--model", opt_string(*tbl, "model"));
+    add_opt_str(args, "--landmark-model", opt_string(*tbl, "landmark_model"));
     add_opt_double(args, "--confidence", opt_double(*tbl, "confidence"));
-    add_opt_double(args, "--nms", opt_double(*tbl, "nms"));
     add_opt_int(args, "--keypoints", opt_int(*tbl, "keypoints"));
-    add_opt_int(args, "--max-detections", opt_int(*tbl, "max_detections"));
+    add_opt_int(args, "--output-hands", opt_int(*tbl, "output_hands"));
     add_opt_str(args, "--npu-core", opt_string(*tbl, "npu_core"));
+    add_opt_str(args, "--palm-npu-core", opt_string(*tbl, "palm_npu_core"));
+    add_opt_str(args, "--landmark-npu-core", opt_string(*tbl, "landmark_npu_core"));
     add_opt_int(args, "--subscriber-buffer", opt_int(*tbl, "subscriber_buffer"));
   }
   return args;
@@ -472,7 +474,6 @@ static auto build_signlang_det_args(const toml::table& cfg) -> std::vector<std::
 
   if (const auto* tbl = cfg["signlang_det"].as_table()) {
     add_opt_str(args, "--model", opt_string(*tbl, "model"));
-    add_opt_str(args, "--label-map", opt_string(*tbl, "label_map"));
     add_opt_str(args, "--prototypes", opt_string(*tbl, "prototypes"));
     add_opt_int(args, "--sequence-length", opt_int(*tbl, "sequence_length"));
     add_opt_double(args, "--overlap-ratio", opt_double(*tbl, "overlap_ratio"));

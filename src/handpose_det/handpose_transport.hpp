@@ -32,7 +32,7 @@ namespace signlang::handpose_det {
   class HandPoseTransport {
   public:
     HandPoseTransport(const std::string& input_service_name, const std::string& output_service_name,
-                      std::uint64_t subscriber_buffer_size, std::uint32_t max_detections);
+                      std::uint64_t subscriber_buffer_size, std::uint32_t output_capacity);
 
     HandPoseTransport(const HandPoseTransport&) = delete;
     auto operator=(const HandPoseTransport&) -> HandPoseTransport& = delete;
@@ -54,7 +54,7 @@ namespace signlang::handpose_det {
         -> iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<std::uint8_t>,
                             signlang::video_frontend::VideoFrameMetadata>;
     static auto create_handpose_publisher(const iox2::Node<iox2::ServiceType::Ipc>& node,
-                                          const std::string& service_name, std::uint32_t max_detections)
+                                          const std::string& service_name, std::uint32_t output_capacity)
         -> iox2::Publisher<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>, HandPoseFrameMetadata>;
     static auto timestamp_ns() -> std::uint64_t;
 
@@ -63,7 +63,7 @@ namespace signlang::handpose_det {
                      signlang::video_frontend::VideoFrameMetadata>
         subscriber_;
     iox2::Publisher<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>, HandPoseFrameMetadata> publisher_;
-    std::uint32_t max_detections_;
+    std::uint32_t output_capacity_;
   };
 
   class IpcHandPoseStateMonitor {
@@ -135,7 +135,7 @@ namespace signlang::handpose_det {
   inline void HandPoseTransport::publish(const signlang::video_frontend::VideoFrameMetadata& source_metadata,
                                          std::uint64_t sequence_number, HandPosePublishInfo publish_info,
                                          const HandPoseDetection* detections) {
-    if (publish_info.detection_count > max_detections_) {
+    if (publish_info.detection_count > output_capacity_) {
       throw std::runtime_error("Hand pose detection count exceeds output payload capacity");
     }
 

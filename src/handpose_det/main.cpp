@@ -49,13 +49,14 @@ auto main(int argc, char** argv) -> int {
     install_signal_handlers();
 
     spdlog::info("Starting hand pose detector");
-    spdlog::info("Model: {}", options.model_path);
+    spdlog::info("Palm detector model: {}", options.palm_detector_model_path);
+    spdlog::info("Landmark model: {}", options.landmark_model_path);
 
-    HandPoseModel model{options.model_path, options};
+    HandPoseModel model{options.palm_detector_model_path, options.landmark_model_path, options};
     spdlog::info("Hand pose model loaded successfully");
 
     HandPoseTransport transport{options.input_service_name, options.output_service_name, options.subscriber_buffer_size,
-                                options.max_detections};
+                                options.output_hands};
     auto state_monitor = std::optional<IpcHandPoseStateMonitor>{};
     if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
       state_monitor.emplace(options.state_event_service_name.value(), options.state_blackboard_service_name.value());
@@ -87,7 +88,7 @@ auto main(int argc, char** argv) -> int {
       }
 
       transport.receive_latest([&](const signlang::handpose_det::VideoSampleView& sample) {
-        auto detections = iox2::bb::MutableSlice<HandPoseDetection>{detection_buffer.data(), options.max_detections};
+        auto detections = iox2::bb::MutableSlice<HandPoseDetection>{detection_buffer.data(), options.output_hands};
         const auto result = model.run(*sample.metadata, sample.payload, sample.payload_size, detections);
         transport.publish(*sample.metadata, sequence_number++,
                           signlang::handpose_det::HandPosePublishInfo{

@@ -2,7 +2,6 @@
 #define SIGNLANG_EYES_HANDPOSE_DET_HANDPOSE_MODEL_HPP
 
 #include "handpose_frame.hpp"
-#include "handpose_preprocessor.hpp"
 #include "program_options.hpp"
 #include "rknn_api.h"
 #include "video_frontend/video_frame.hpp"
@@ -27,7 +26,7 @@ namespace signlang::handpose_det {
 
   class HandPoseModel {
   public:
-    HandPoseModel(std::string model_path, const ProgramOptions& options);
+    HandPoseModel(std::string palm_detector_model_path, std::string landmark_model_path, const ProgramOptions& options);
     ~HandPoseModel();
 
     HandPoseModel(const HandPoseModel&) = delete;
@@ -39,40 +38,38 @@ namespace signlang::handpose_det {
              std::uint64_t payload_size, iox2::bb::MutableSlice<HandPoseDetection> detections) -> InferenceResult;
 
   private:
-    struct Candidate {
+    struct RknnModel;
+    struct Anchor;
+    struct PalmCandidate {
       HandPoseDetection detection;
-      std::uint32_t index;
-      bool suppressed;
+      std::array<float, 14> palm_keypoints;
     };
+    struct CropTransform;
 
-    void load_model(const std::string& model_path, const ProgramOptions& options);
-    void configure_io(const ProgramOptions& options);
+    void initialize_models(const ProgramOptions& options);
+    void validate_models() const;
     void print_tensor_details() const;
-    auto input_stride_width_pixels() const -> std::uint32_t;
-    auto output_stride_candidate_count() const -> std::uint32_t;
-    auto output_value(std::uint32_t channel, std::uint32_t candidate_index) const -> float;
-    auto parse_output(const LetterboxInfo& letterbox, const signlang::video_frontend::VideoFrameMetadata& metadata,
-                      iox2::bb::MutableSlice<HandPoseDetection> detections) -> std::uint32_t;
+    void build_palm_anchors();
+    void run_palm_detector(const signlang::video_frontend::VideoFrameMetadata& metadata, const std::uint8_t* payload,
+                           std::uint64_t payload_size);
+    void run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                               const std::uint8_t* payload, std::uint64_t payload_size,
+                               PalmCandidate& candidate);
+    auto crop_transform_for(const HandPoseBox& box, std::uint32_t image_width, std::uint32_t image_height) const
+        -> CropTransform;
 
-    std::string model_path_;
-    rknn_context context_;
-    rknn_input_output_num io_num_;
-    std::vector<rknn_tensor_attr> input_attrs_;
-    std::vector<rknn_tensor_attr> output_attrs_;
-    rknn_tensor_mem* input_mem_;
-    rknn_tensor_mem* output_mem_;
-    HandPosePreprocessor preprocessor_;
-    std::vector<Candidate> candidates_;
-    std::vector<std::uint32_t> order_;
+    std::string palm_detector_model_path_;
+    std::string landmark_model_path_;
+    std::unique_ptr<RknnModel> palm_detector_;
+    std::unique_ptr<RknnModel> landmark_model_;
+    std::vector<Anchor> anchors_;
+    std::vector<PalmCandidate> candidates_;
+    std::vector<PalmCandidate> selected_;
     float confidence_threshold_;
-    float nms_threshold_;
     std::uint32_t keypoint_count_;
-    std::uint32_t max_detections_;
+    std::uint32_t output_hands_;
     std::uint32_t model_width_;
     std::uint32_t model_height_;
-    std::uint32_t output_channel_count_;
-    std::uint32_t output_candidate_count_;
-    std::uint32_t output_stride_candidate_count_;
   };
 
 } // namespace signlang::handpose_det

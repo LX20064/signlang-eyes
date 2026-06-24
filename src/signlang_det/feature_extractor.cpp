@@ -143,7 +143,8 @@ namespace signlang::signlang_det {
     for (const auto& kp : keypoints) {
       const auto dx = std::abs(kp.x - wrist.x);
       const auto dy = std::abs(kp.y - wrist.y);
-      max_distance = std::max(max_distance, std::max(dx, dy));
+      const auto dz = std::abs(kp.z - wrist.z);
+      max_distance = std::max({max_distance, dx, dy, dz});
     }
 
     return max_distance + kScaleEpsilon;
@@ -166,12 +167,14 @@ namespace signlang::signlang_det {
     for (std::size_t i = 0; i < keypoints.size(); ++i) {
       features.features[i].normalized_x = (keypoints[i].x - wrist.x) / scale;
       features.features[i].normalized_y = (keypoints[i].y - wrist.y) / scale;
+      features.features[i].normalized_z = (keypoints[i].z - wrist.z) / scale;
 
       if (has_prev) {
         const auto& prev_kp = prev_hands_[hand_index].keypoints[i];
         const auto dx = (keypoints[i].x - prev_kp.x) / scale;
         const auto dy = (keypoints[i].y - prev_kp.y) / scale;
-        features.features[i].velocity_magnitude = std::sqrt(dx * dx + dy * dy);
+        const auto dz = (keypoints[i].z - prev_kp.z) / scale;
+        features.features[i].velocity_magnitude = std::sqrt(dx * dx + dy * dy + dz * dz);
       } else {
         features.features[i].velocity_magnitude = 0.0F;
       }
@@ -210,6 +213,7 @@ namespace signlang::signlang_det {
         for (auto& kp_feat : feature.hands[i].features) {
           kp_feat.normalized_x = 0.0F;
           kp_feat.normalized_y = 0.0F;
+          kp_feat.normalized_z = 0.0F;
           kp_feat.velocity_magnitude = 0.0F;
         }
         if (!sequence_continuous) {

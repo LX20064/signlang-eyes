@@ -48,18 +48,19 @@ npu_core = "0"
 
 [handpose_det]
 npu_core = "2"
-# model = "models/yolov8n-handpose/yolov8_handpose.rknn"
+# palm_npu_core = ""              # Override palm detector NPU core (empty = use npu_core)
+# landmark_npu_core = ""          # Override landmark model NPU core (empty = use npu_core)
+# model = "models/mediapipe/hand_detector.rknn"
+# landmark_model = "models/mediapipe/hand_landmarks_detector.rknn"
 # confidence = 0.5                 # Detection confidence threshold
-# nms = 0.4                        # NMS IoU threshold
 # keypoints = 21                   # Expected keypoint count per hand
-# max_detections = 2               # Max detections published per frame
+# output_hands = 2                 # Fixed number of hand slots published per frame
 # subscriber_buffer = 2
 
 [signlang_det]
 npu_core = "0"
 # model = "models/signlang/signlang.rknn"
-# label_map = "models/signlang/labels.txt"
-# prototypes = "models/signlang/prototypes.bin"
+# prototypes = "models/signlang/prototypes.sqlite"
 # sequence_length = 30             # Sliding window frame count
 # overlap_ratio = 0.2              # Window overlap ratio
 # min_confidence = 0.3             # Minimum keypoint confidence
