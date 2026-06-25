@@ -28,7 +28,10 @@ namespace signlang::handpose_det {
     HandPoseBox box;
     std::array<HandPoseKeypoint, kHandPoseKeypointCount> keypoints;
     float confidence;
+    float presence_confidence;
     std::uint32_t class_id;
+    bool present;
+    bool is_left_hand;
   };
 
   struct HandPoseFrameMetadata {

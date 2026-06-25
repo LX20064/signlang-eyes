@@ -47,31 +47,42 @@ namespace signlang::handpose_det {
         "signlang_eyes_handpose_det",
         "Subscribe video frames from iceoryx2, run MediaPipe palm and hand landmark RKNN models, and publish hand keypoints."};
 
-    options.add_options()("i,input-service", "Upstream video iceoryx2 service name", cxxopts::value<std::string>())(
-        "o,output-service", "Output handpose iceoryx2 service name", cxxopts::value<std::string>())(
-        "state-event-service", "iceoryx2 event service name for global app state change notifications",
-        cxxopts::value<std::string>())("state-blackboard-service",
-                                       "iceoryx2 blackboard service name for global app state storage",
-                                       cxxopts::value<std::string>())(
-        "m,model", "Palm detector RKNN model path",
-        cxxopts::value<std::string>()->default_value(kDefaultPalmDetectorModelPath))(
-        "landmark-model", "Hand landmark RKNN model path",
-        cxxopts::value<std::string>()->default_value(kDefaultLandmarkModelPath))(
-        "confidence", "Detection confidence threshold",
-        cxxopts::value<float>()->default_value(std::to_string(kDefaultConfidenceThreshold)))(
-        "subscriber-buffer", "iceoryx2 subscriber queue size",
-        cxxopts::value<std::uint64_t>()->default_value(std::to_string(kDefaultSubscriberBufferSize)))(
-        "keypoints", "Expected keypoint count per detection",
-        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultKeypointCount)))(
-        "output-hands", "Number of hands published per frame",
-        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultOutputHands)))(
-        "npu-core", "RK3588 NPU core mask: auto,0,1,2,0_1,0_1_2,all",
-        cxxopts::value<std::string>()->default_value("auto"))(
-        "palm-npu-core", "Palm detector NPU core mask; defaults to --npu-core",
-        cxxopts::value<std::string>())(
-        "landmark-npu-core", "Hand landmark NPU core mask; defaults to --npu-core",
-        cxxopts::value<std::string>())("verbose", "Print model tensor details")("h,help",
-                                                                                                       "Print usage");
+    // clang-format off
+    options.add_options()
+      ("i,input-service",              "Upstream video iceoryx2 service name",                      cxxopts::value<std::string>())
+      ("o,output-service",             "Output handpose iceoryx2 service name",                     cxxopts::value<std::string>())
+      ("state-event-service",          "iceoryx2 event service name for app state notifications",   cxxopts::value<std::string>())
+      ("state-blackboard-service",     "iceoryx2 blackboard service name for app state storage",    cxxopts::value<std::string>())
+      ("m,model",                      "Palm detector RKNN model path",                             cxxopts::value<std::string>()->default_value(kDefaultPalmDetectorModelPath))
+      ("landmark-model",               "Hand landmark RKNN model path",                             cxxopts::value<std::string>()->default_value(kDefaultLandmarkModelPath))
+      ("confidence",                   "Palm detection confidence threshold",                       cxxopts::value<float>()->default_value(std::to_string(kDefaultConfidenceThreshold)))
+      ("presence-threshold",           "Hand presence confidence threshold",                        cxxopts::value<float>()->default_value(std::to_string(kDefaultPresenceThreshold)))
+      ("tracking-threshold",           "Tracking confidence threshold for reusing ROI",             cxxopts::value<float>()->default_value(std::to_string(kDefaultTrackingThreshold)))
+      ("nms-iou-threshold",            "NMS IoU threshold for weighted merge",                      cxxopts::value<float>()->default_value(std::to_string(kDefaultNmsIouThreshold)))
+      ("tracking-iou-match",           "IoU threshold for matching detections to tracked hands",    cxxopts::value<float>()->default_value(std::to_string(kDefaultTrackingIoUMatchThreshold)))
+      ("crop-expansion",               "Expansion factor for tracking crop from bounding box",      cxxopts::value<float>()->default_value(std::to_string(kDefaultCropExpansion)))
+      ("base-roi-expansion",           "Base ROI expansion from palm keypoints",                    cxxopts::value<float>()->default_value(std::to_string(kDefaultBaseRoiExpansion)))
+      ("small-hand-expansion",         "Expansion factor for small hands",                          cxxopts::value<float>()->default_value(std::to_string(kDefaultSmallHandExpansion)))
+      ("large-hand-expansion",         "Expansion factor for large hands",                          cxxopts::value<float>()->default_value(std::to_string(kDefaultLargeHandExpansion)))
+      ("small-hand-threshold",         "Pixel threshold below which a hand is considered small",    cxxopts::value<float>()->default_value(std::to_string(kDefaultSmallHandThreshold)))
+      ("large-hand-threshold",         "Pixel threshold above which a hand is considered large",    cxxopts::value<float>()->default_value(std::to_string(kDefaultLargeHandThreshold)))
+      ("boundary-margin",              "Distance to image edge triggering boundary shrink",          cxxopts::value<float>()->default_value(std::to_string(kDefaultBoundaryMargin)))
+      ("boundary-min-factor",          "Minimum expansion multiplier at image boundary",             cxxopts::value<float>()->default_value(std::to_string(kDefaultBoundaryMinFactor)))
+      ("euro-min-cutoff",              "One Euro Filter min cutoff frequency (Hz)",                  cxxopts::value<float>()->default_value(std::to_string(kDefaultEuroMinCutoff)))
+      ("euro-beta",                    "One Euro Filter speed coefficient (beta)",                   cxxopts::value<float>()->default_value(std::to_string(kDefaultEuroBeta)))
+      ("euro-d-cutoff",                "One Euro Filter derivative cutoff frequency (Hz)",           cxxopts::value<float>()->default_value(std::to_string(kDefaultEuroDCutoff)))
+      ("handedness-threshold",         "Threshold for left/right hand classification",              cxxopts::value<float>()->default_value(std::to_string(kDefaultHandednessThreshold)))
+      ("max-tracking-gap",             "Max frames gap before tracking is considered lost",         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultMaxTrackingGap)))
+      ("max-stale-frames",             "Max frames before a stale tracked hand slot is reclaimed",  cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultMaxStaleFrames)))
+      ("subscriber-buffer",            "iceoryx2 subscriber queue size",                            cxxopts::value<std::uint64_t>()->default_value(std::to_string(kDefaultSubscriberBufferSize)))
+      ("keypoints",                    "Expected keypoint count per detection",                     cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultKeypointCount)))
+      ("output-hands",                 "Number of hands published per frame",                       cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultOutputHands)))
+      ("npu-core",                     "RK3588 NPU core mask: auto,0,1,2,0_1,0_1_2,all",           cxxopts::value<std::string>()->default_value("auto"))
+      ("palm-npu-core",                "Palm detector NPU core mask; defaults to --npu-core",       cxxopts::value<std::string>())
+      ("landmark-npu-core",            "Hand landmark NPU core mask; defaults to --npu-core",       cxxopts::value<std::string>())
+      ("verbose",                      "Print model tensor details")
+      ("h,help",                       "Print usage");
+    // clang-format on
     signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
@@ -86,13 +97,10 @@ namespace signlang::handpose_det {
     const auto has_state_event_service = parsed_options.count("state-event-service") != 0;
     const auto has_state_blackboard_service = parsed_options.count("state-blackboard-service") != 0;
     if (has_state_event_service != has_state_blackboard_service) {
-      throw std::runtime_error("Options --state-event-service and --state-blackboard-service must be provided "
-                               "together.\n\n" +
-                               options.help());
+      throw std::runtime_error(
+          "Options --state-event-service and --state-blackboard-service must be provided together.\n\n" +
+          options.help());
     }
-
-    const auto confidence_threshold = parsed_options["confidence"].as<float>();
-    validate_threshold(confidence_threshold, "confidence");
 
     const auto subscriber_buffer_size = parsed_options["subscriber-buffer"].as<std::uint64_t>();
     if (subscriber_buffer_size == 0) {
@@ -114,25 +122,44 @@ namespace signlang::handpose_det {
 
     const auto default_npu_core = parsed_options["npu-core"].as<std::string>();
     const auto palm_npu_core = parsed_options.count("palm-npu-core") != 0
-        ? parsed_options["palm-npu-core"].as<std::string>()
-        : default_npu_core;
+                                   ? parsed_options["palm-npu-core"].as<std::string>()
+                                   : default_npu_core;
     const auto landmark_npu_core = parsed_options.count("landmark-npu-core") != 0
-        ? parsed_options["landmark-npu-core"].as<std::string>()
-        : default_npu_core;
+                                       ? parsed_options["landmark-npu-core"].as<std::string>()
+                                       : default_npu_core;
 
     return ProgramOptionsParseResult{ProgramOptions{
         .input_service_name = parsed_options["input-service"].as<std::string>(),
         .output_service_name = parsed_options["output-service"].as<std::string>(),
         .state_event_service_name =
-            has_state_event_service ? std::optional<std::string>{parsed_options["state-event-service"].as<std::string>()}
-                                    : std::nullopt,
+            has_state_event_service
+                ? std::optional<std::string>{parsed_options["state-event-service"].as<std::string>()}
+                : std::nullopt,
         .state_blackboard_service_name =
             has_state_blackboard_service
                 ? std::optional<std::string>{parsed_options["state-blackboard-service"].as<std::string>()}
                 : std::nullopt,
         .palm_detector_model_path = parsed_options["model"].as<std::string>(),
         .landmark_model_path = parsed_options["landmark-model"].as<std::string>(),
-        .confidence_threshold = confidence_threshold,
+        .confidence_threshold = parsed_options["confidence"].as<float>(),
+        .presence_threshold = parsed_options["presence-threshold"].as<float>(),
+        .tracking_threshold = parsed_options["tracking-threshold"].as<float>(),
+        .nms_iou_threshold = parsed_options["nms-iou-threshold"].as<float>(),
+        .tracking_iou_match_threshold = parsed_options["tracking-iou-match"].as<float>(),
+        .crop_expansion = parsed_options["crop-expansion"].as<float>(),
+        .base_roi_expansion = parsed_options["base-roi-expansion"].as<float>(),
+        .small_hand_expansion = parsed_options["small-hand-expansion"].as<float>(),
+        .large_hand_expansion = parsed_options["large-hand-expansion"].as<float>(),
+        .small_hand_threshold = parsed_options["small-hand-threshold"].as<float>(),
+        .large_hand_threshold = parsed_options["large-hand-threshold"].as<float>(),
+        .boundary_margin = parsed_options["boundary-margin"].as<float>(),
+        .boundary_min_factor = parsed_options["boundary-min-factor"].as<float>(),
+        .euro_min_cutoff = parsed_options["euro-min-cutoff"].as<float>(),
+        .euro_beta = parsed_options["euro-beta"].as<float>(),
+        .euro_d_cutoff = parsed_options["euro-d-cutoff"].as<float>(),
+        .handedness_threshold = parsed_options["handedness-threshold"].as<float>(),
+        .max_tracking_gap = parsed_options["max-tracking-gap"].as<std::uint32_t>(),
+        .max_stale_frames = parsed_options["max-stale-frames"].as<std::uint32_t>(),
         .subscriber_buffer_size = subscriber_buffer_size,
         .keypoint_count = keypoint_count,
         .output_hands = output_hands,

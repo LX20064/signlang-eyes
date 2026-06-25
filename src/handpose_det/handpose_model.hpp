@@ -44,19 +44,64 @@ namespace signlang::handpose_det {
       HandPoseDetection detection;
       std::array<float, 14> palm_keypoints;
     };
-    struct CropTransform;
+    struct CropTransform {
+      float left;
+      float top;
+      float size;
+    };
+    struct TrackedHand {
+      HandPoseBox roi;
+      float palm_confidence;
+      float presence_confidence;
+      std::uint64_t last_seen_frame;
+      bool is_left_hand;
+      std::array<HandPoseKeypoint, kHandPoseKeypointCount> smoothed_keypoints;
+    };
+    struct OneEuroFilter {
+      float x;
+      float dx;
+      float min_cutoff;
+      float beta;
+      float d_cutoff;
+      std::uint64_t last_time;
+      bool initialized;
+    };
 
     void initialize_models(const ProgramOptions& options);
     void validate_models() const;
     void print_tensor_details() const;
     void build_palm_anchors();
-    void run_palm_detector(const signlang::video_frontend::VideoFrameMetadata& metadata, const std::uint8_t* payload,
-                           std::uint64_t payload_size);
+
+    void run_palm_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                           const std::uint8_t* payload, std::uint64_t payload_size);
+
     void run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
                                const std::uint8_t* payload, std::uint64_t payload_size,
                                PalmCandidate& candidate);
-    auto crop_transform_for(const HandPoseBox& box, std::uint32_t image_width, std::uint32_t image_height) const
-        -> CropTransform;
+
+    auto extract_landmarks(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                           const std::uint8_t* payload, std::uint64_t payload_size,
+                           const CropTransform& transform, std::array<HandPoseKeypoint, kHandPoseKeypointCount>& out,
+                           float& out_presence, bool& out_is_left) const -> bool;
+
+    void try_tracking_from_previous_frame(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                          const std::uint8_t* payload, std::uint64_t payload_size);
+
+    void update_tracked_hands(const std::vector<PalmCandidate>& detected_hands);
+    void apply_nms();
+
+    auto compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) const -> float;
+
+    auto crop_transform_from_box(const HandPoseBox& box, std::uint32_t image_width,
+                                 std::uint32_t image_height) const -> CropTransform;
+
+    auto crop_transform_from_palm_keypoints(const std::array<float, 14>& palm_keypoints,
+                                            std::uint32_t image_width,
+                                            std::uint32_t image_height) const -> CropTransform;
+
+    auto apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns) -> float;
+
+    void smooth_keypoints_hand(std::size_t hand_index, std::uint64_t timestamp_ns);
 
     std::string palm_detector_model_path_;
     std::string landmark_model_path_;
@@ -65,7 +110,28 @@ namespace signlang::handpose_det {
     std::vector<Anchor> anchors_;
     std::vector<PalmCandidate> candidates_;
     std::vector<PalmCandidate> selected_;
+    std::vector<TrackedHand> tracked_hands_;
+    std::vector<std::vector<OneEuroFilter>> keypoint_filters_;
+    std::uint64_t current_frame_number_;
     float confidence_threshold_;
+    float presence_threshold_;
+    float tracking_threshold_;
+    float nms_iou_threshold_;
+    float tracking_iou_match_threshold_;
+    float crop_expansion_;
+    float base_roi_expansion_;
+    float small_hand_expansion_;
+    float large_hand_expansion_;
+    float small_hand_threshold_;
+    float large_hand_threshold_;
+    float boundary_margin_;
+    float boundary_min_factor_;
+    float euro_min_cutoff_;
+    float euro_beta_;
+    float euro_d_cutoff_;
+    float handedness_threshold_;
+    std::uint32_t max_tracking_gap_;
+    std::uint32_t max_stale_frames_;
     std::uint32_t keypoint_count_;
     std::uint32_t output_hands_;
     std::uint32_t model_width_;

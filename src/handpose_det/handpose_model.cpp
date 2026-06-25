@@ -28,7 +28,7 @@ namespace signlang::handpose_det {
     constexpr auto kPalmScoreClip = 100.0F;
     constexpr auto kPalmBoxScale = 192.0F;
     constexpr auto kLandmarkValueCount = std::uint32_t{63};
-    constexpr auto kCropExpansion = 2.0F;
+    constexpr auto kPi = 3.14159265358979F;
 
     auto read_file(const std::string& path) -> std::vector<std::uint8_t> {
       std::ifstream file{path, std::ios::binary | std::ios::ate};
@@ -169,12 +169,6 @@ namespace signlang::handpose_det {
     float y_center;
   };
 
-  struct HandPoseModel::CropTransform {
-    float left;
-    float top;
-    float size;
-  };
-
   struct HandPoseModel::RknnModel {
     explicit RknnModel(const std::string& model_path, rknn_core_mask core_mask) :
         context{0}, io_num{}, input_mem{nullptr}, input_width{0}, input_height{0}, input_channels{0} {
@@ -286,9 +280,33 @@ namespace signlang::handpose_det {
   HandPoseModel::HandPoseModel(std::string palm_detector_model_path, std::string landmark_model_path,
                                const ProgramOptions& options) :
       palm_detector_model_path_{std::move(palm_detector_model_path)},
-      landmark_model_path_{std::move(landmark_model_path)}, palm_detector_{nullptr}, landmark_model_{nullptr},
-      confidence_threshold_{options.confidence_threshold}, keypoint_count_{options.keypoint_count},
-      output_hands_{options.output_hands}, model_width_{kPalmInputSize}, model_height_{kPalmInputSize} {
+      landmark_model_path_{std::move(landmark_model_path)},
+      palm_detector_{nullptr},
+      landmark_model_{nullptr},
+      current_frame_number_{0},
+      confidence_threshold_{options.confidence_threshold},
+      presence_threshold_{options.presence_threshold},
+      tracking_threshold_{options.tracking_threshold},
+      nms_iou_threshold_{options.nms_iou_threshold},
+      tracking_iou_match_threshold_{options.tracking_iou_match_threshold},
+      crop_expansion_{options.crop_expansion},
+      base_roi_expansion_{options.base_roi_expansion},
+      small_hand_expansion_{options.small_hand_expansion},
+      large_hand_expansion_{options.large_hand_expansion},
+      small_hand_threshold_{options.small_hand_threshold},
+      large_hand_threshold_{options.large_hand_threshold},
+      boundary_margin_{options.boundary_margin},
+      boundary_min_factor_{options.boundary_min_factor},
+      euro_min_cutoff_{options.euro_min_cutoff},
+      euro_beta_{options.euro_beta},
+      euro_d_cutoff_{options.euro_d_cutoff},
+      handedness_threshold_{options.handedness_threshold},
+      max_tracking_gap_{options.max_tracking_gap},
+      max_stale_frames_{options.max_stale_frames},
+      keypoint_count_{options.keypoint_count},
+      output_hands_{options.output_hands},
+      model_width_{kPalmInputSize},
+      model_height_{kPalmInputSize} {
     if (keypoint_count_ != kHandPoseKeypointCount) {
       throw std::runtime_error("MediaPipe hand landmark model requires exactly 21 keypoints");
     }
@@ -297,6 +315,20 @@ namespace signlang::handpose_det {
     build_palm_anchors();
     candidates_.reserve(kPalmAnchorCount);
     selected_.reserve(output_hands_);
+    tracked_hands_.reserve(output_hands_);
+    keypoint_filters_.resize(output_hands_);
+    for (auto& hand_filters : keypoint_filters_) {
+      hand_filters.resize(kHandPoseKeypointCount * 3);
+      for (auto& filter : hand_filters) {
+        filter = OneEuroFilter{.x = 0.0F,
+                               .dx = 0.0F,
+                               .min_cutoff = euro_min_cutoff_,
+                               .beta = euro_beta_,
+                               .d_cutoff = euro_d_cutoff_,
+                               .last_time = 0,
+                               .initialized = false};
+      }
+    }
   }
 
   HandPoseModel::~HandPoseModel() = default;
@@ -310,28 +342,76 @@ namespace signlang::handpose_det {
 
     for (std::uint32_t i = 0; i < output_hands_; ++i) {
       detections[i] = HandPoseDetection{};
+      detections[i].present = false;
     }
 
-    run_palm_detector(metadata, payload, payload_size);
-    std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
-      return lhs.detection.confidence > rhs.detection.confidence;
-    });
+    current_frame_number_++;
 
-    selected_.clear();
-    const auto selected_count = std::min<std::uint32_t>(output_hands_, static_cast<std::uint32_t>(candidates_.size()));
-    for (std::uint32_t i = 0; i < selected_count; ++i) {
-      selected_.push_back(candidates_[i]);
+    try_tracking_from_previous_frame(metadata, payload, payload_size);
+
+    auto tracked_count = std::uint32_t{0};
+    for (const auto& tracked : tracked_hands_) {
+      if (tracked.last_seen_frame == current_frame_number_) {
+        tracked_count++;
+      }
     }
 
-    std::sort(selected_.begin(), selected_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
-      const auto lhs_center = (lhs.detection.box.left + lhs.detection.box.right) * 0.5F;
-      const auto rhs_center = (rhs.detection.box.left + rhs.detection.box.right) * 0.5F;
-      return lhs_center < rhs_center;
-    });
+    if (tracked_count < output_hands_) {
+      run_palm_detector(metadata, payload, payload_size);
+      apply_nms();
 
-    for (std::uint32_t i = 0; i < selected_.size(); ++i) {
-      run_landmark_detector(metadata, payload, payload_size, selected_[i]);
-      detections[i] = selected_[i].detection;
+      std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+        return lhs.detection.confidence > rhs.detection.confidence;
+      });
+
+      selected_.clear();
+      for (std::size_t i = 0; i < candidates_.size() && selected_.size() < output_hands_ - tracked_count; ++i) {
+        auto already_tracked = false;
+        for (const auto& tracked : tracked_hands_) {
+          if (tracked.last_seen_frame == current_frame_number_ &&
+              compute_iou(tracked.roi, candidates_[i].detection.box) > tracking_iou_match_threshold_) {
+            already_tracked = true;
+            break;
+          }
+        }
+        if (!already_tracked) {
+          selected_.push_back(candidates_[i]);
+        }
+      }
+
+      std::sort(selected_.begin(), selected_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+        const auto lhs_center = (lhs.detection.box.left + lhs.detection.box.right) * 0.5F;
+        const auto rhs_center = (rhs.detection.box.left + rhs.detection.box.right) * 0.5F;
+        return lhs_center < rhs_center;
+      });
+
+      for (auto& selected : selected_) {
+        run_landmark_detector(metadata, payload, payload_size, selected);
+      }
+    }
+
+    update_tracked_hands(selected_);
+
+    for (std::size_t i = 0; i < tracked_hands_.size() && static_cast<std::uint32_t>(i) < output_hands_; ++i) {
+      if (tracked_hands_[i].last_seen_frame == current_frame_number_) {
+        smooth_keypoints_hand(i, metadata.timestamp_ns);
+      }
+    }
+
+    auto output_idx = std::uint32_t{0};
+    for (const auto& tracked : tracked_hands_) {
+      if (tracked.last_seen_frame == current_frame_number_ && output_idx < output_hands_) {
+        detections[output_idx] = HandPoseDetection{
+            .box = tracked.roi,
+            .keypoints = tracked.smoothed_keypoints,
+            .confidence = tracked.palm_confidence,
+            .presence_confidence = tracked.presence_confidence,
+            .class_id = 0,
+            .present = true,
+            .is_left_hand = tracked.is_left_hand,
+        };
+        output_idx++;
+      }
     }
 
     return InferenceResult{
@@ -473,65 +553,390 @@ namespace signlang::handpose_det {
     }
   }
 
-  auto HandPoseModel::crop_transform_for(const HandPoseBox& box, std::uint32_t image_width,
-                                         std::uint32_t image_height) const -> CropTransform {
+  auto HandPoseModel::crop_transform_from_box(const HandPoseBox& box, std::uint32_t image_width,
+                                               std::uint32_t image_height) const -> CropTransform {
     const auto center_x = (box.left + box.right) * 0.5F;
     const auto center_y = (box.top + box.bottom) * 0.5F;
     const auto box_width = std::max(1.0F, box.right - box.left);
     const auto box_height = std::max(1.0F, box.bottom - box.top);
-    const auto size = std::max(box_width, box_height) * kCropExpansion;
-    const auto left = std::clamp(center_x - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_width) - 1.0F));
-    const auto top = std::clamp(center_y - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_height) - 1.0F));
+    const auto size = std::max(box_width, box_height) * crop_expansion_;
+    const auto left =
+        std::clamp(center_x - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_width) - 1.0F));
+    const auto top =
+        std::clamp(center_y - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_height) - 1.0F));
     const auto right = std::clamp(center_x + size * 0.5F, left + 1.0F, static_cast<float>(image_width));
     const auto bottom = std::clamp(center_y + size * 0.5F, top + 1.0F, static_cast<float>(image_height));
     const auto crop_size = std::min(right - left, bottom - top);
     return CropTransform{.left = left, .top = top, .size = std::max(1.0F, crop_size)};
   }
 
-  void HandPoseModel::run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
-                                            const std::uint8_t* payload, std::uint64_t payload_size,
-                                            PalmCandidate& candidate) {
-    if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
-      throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
-    }
-
-    const auto transform = crop_transform_for(candidate.detection.box, metadata.output_width, metadata.output_height);
+  auto HandPoseModel::extract_landmarks(
+      const signlang::video_frontend::VideoFrameMetadata& metadata, const std::uint8_t* payload,
+      std::uint64_t payload_size, const CropTransform& transform,
+      std::array<HandPoseKeypoint, kHandPoseKeypointCount>& out, float& out_presence,
+      bool& out_is_left) const -> bool {
     const auto src_rect = im_rect{
         .x = static_cast<int>(std::floor(transform.left)),
         .y = static_cast<int>(std::floor(transform.top)),
         .width = std::max(1, static_cast<int>(std::floor(transform.size))),
         .height = std::max(1, static_cast<int>(std::floor(transform.size))),
     };
+    if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
+      return false;
+    }
     resize_rgb_with_rga(payload, metadata.output_width, metadata.output_height, landmark_model_->input_data(),
                         landmark_model_->width(), landmark_model_->height(), src_rect);
     landmark_model_->run();
 
-    const auto hand_presence = std::clamp(landmark_model_->output_value(1, 0), 0.0F, 1.0F);
-    candidate.detection.confidence = std::min(candidate.detection.confidence, hand_presence);
-    const auto scale = transform.size / static_cast<float>(landmark_model_->width());
+    out_presence = std::clamp(landmark_model_->output_value(1, 0), 0.0F, 1.0F);
+    if (out_presence < presence_threshold_) {
+      return false;
+    }
 
-    auto left = std::numeric_limits<float>::max();
-    auto top = std::numeric_limits<float>::max();
-    auto right = 0.0F;
-    auto bottom = 0.0F;
+    if (landmark_model_->output_attrs.size() >= 3 && output_element_count(landmark_model_->output_attrs[2]) >= 1) {
+      out_is_left = landmark_model_->output_value(2, 0) > handedness_threshold_;
+    } else {
+      out_is_left = false;
+    }
+
+    const auto scale = transform.size / static_cast<float>(landmark_model_->width());
     for (std::uint32_t i = 0; i < kHandPoseKeypointCount; ++i) {
       const auto base = static_cast<std::uint64_t>(i) * 3;
       const auto x = transform.left + landmark_model_->output_value(0, base) * scale;
       const auto y = transform.top + landmark_model_->output_value(0, base + 1) * scale;
       const auto z = landmark_model_->output_value(0, base + 2) * scale;
-      candidate.detection.keypoints[i] = HandPoseKeypoint{
+      out[i] = HandPoseKeypoint{
           .x = std::clamp(x, 0.0F, static_cast<float>(metadata.output_width)),
           .y = std::clamp(y, 0.0F, static_cast<float>(metadata.output_height)),
           .z = z,
-          .confidence = hand_presence,
+          .confidence = out_presence,
       };
-      left = std::min(left, candidate.detection.keypoints[i].x);
-      top = std::min(top, candidate.detection.keypoints[i].y);
-      right = std::max(right, candidate.detection.keypoints[i].x);
-      bottom = std::max(bottom, candidate.detection.keypoints[i].y);
+    }
+    return true;
+  }
+
+  void HandPoseModel::run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                            const std::uint8_t* payload, std::uint64_t payload_size,
+                                            PalmCandidate& candidate) {
+    const auto transform = crop_transform_from_palm_keypoints(candidate.palm_keypoints, metadata.output_width,
+                                                               metadata.output_height);
+    std::array<HandPoseKeypoint, kHandPoseKeypointCount> keypoints{};
+    float presence = 0.0F;
+    bool is_left = false;
+
+    if (!extract_landmarks(metadata, payload, payload_size, transform, keypoints, presence, is_left)) {
+      candidate.detection.present = false;
+      candidate.detection.presence_confidence = presence;
+      return;
     }
 
+    candidate.detection.keypoints = keypoints;
+    candidate.detection.presence_confidence = presence;
+    candidate.detection.confidence = std::min(candidate.detection.confidence, presence);
+    candidate.detection.present = true;
+    candidate.detection.is_left_hand = is_left;
+
+    auto left = std::numeric_limits<float>::max();
+    auto top = std::numeric_limits<float>::max();
+    auto right = 0.0F;
+    auto bottom = 0.0F;
+    for (const auto& kp : keypoints) {
+      left = std::min(left, kp.x);
+      top = std::min(top, kp.y);
+      right = std::max(right, kp.x);
+      bottom = std::max(bottom, kp.y);
+    }
     candidate.detection.box = HandPoseBox{.left = left, .top = top, .right = right, .bottom = bottom};
+  }
+
+  auto HandPoseModel::compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) const -> float {
+    const auto x1 = std::max(box1.left, box2.left);
+    const auto y1 = std::max(box1.top, box2.top);
+    const auto x2 = std::min(box1.right, box2.right);
+    const auto y2 = std::min(box1.bottom, box2.bottom);
+
+    if (x2 <= x1 || y2 <= y1) {
+      return 0.0F;
+    }
+
+    const auto intersection = (x2 - x1) * (y2 - y1);
+    const auto area1 = (box1.right - box1.left) * (box1.bottom - box1.top);
+    const auto area2 = (box2.right - box2.left) * (box2.bottom - box2.top);
+    const auto union_area = area1 + area2 - intersection;
+
+    return union_area > 0.0F ? intersection / union_area : 0.0F;
+  }
+
+  void HandPoseModel::apply_nms() {
+    if (candidates_.size() <= 1) {
+      return;
+    }
+
+    std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+      return lhs.detection.confidence > rhs.detection.confidence;
+    });
+
+    auto suppressed = std::vector<bool>(candidates_.size(), false);
+    auto merged = std::vector<PalmCandidate>{};
+    merged.reserve(candidates_.size());
+
+    for (std::size_t i = 0; i < candidates_.size(); ++i) {
+      if (suppressed[i]) {
+        continue;
+      }
+
+      auto group = std::vector<std::size_t>{i};
+      auto total_confidence = candidates_[i].detection.confidence;
+
+      for (std::size_t j = i + 1; j < candidates_.size(); ++j) {
+        if (suppressed[j]) {
+          continue;
+        }
+
+        const auto iou = compute_iou(candidates_[i].detection.box, candidates_[j].detection.box);
+        if (iou > nms_iou_threshold_) {
+          group.push_back(j);
+          total_confidence += candidates_[j].detection.confidence;
+          suppressed[j] = true;
+        }
+      }
+
+      if (group.size() == 1) {
+        merged.push_back(candidates_[i]);
+      } else {
+        auto weighted = PalmCandidate{};
+        weighted.detection.box.left = 0.0F;
+        weighted.detection.box.top = 0.0F;
+        weighted.detection.box.right = 0.0F;
+        weighted.detection.box.bottom = 0.0F;
+        weighted.detection.confidence = 0.0F;
+
+        for (std::size_t k = 0; k < 14; ++k) {
+          weighted.palm_keypoints[k] = 0.0F;
+        }
+
+        for (const auto idx : group) {
+          const auto& candidate = candidates_[idx];
+          const auto weight = candidate.detection.confidence / total_confidence;
+
+          weighted.detection.box.left += candidate.detection.box.left * weight;
+          weighted.detection.box.top += candidate.detection.box.top * weight;
+          weighted.detection.box.right += candidate.detection.box.right * weight;
+          weighted.detection.box.bottom += candidate.detection.box.bottom * weight;
+          weighted.detection.confidence += candidate.detection.confidence * weight;
+
+          for (std::size_t k = 0; k < 14; ++k) {
+            weighted.palm_keypoints[k] += candidate.palm_keypoints[k] * weight;
+          }
+        }
+
+        weighted.detection.class_id = candidates_[i].detection.class_id;
+        weighted.detection.present = candidates_[i].detection.present;
+        weighted.detection.is_left_hand = candidates_[i].detection.is_left_hand;
+        weighted.detection.presence_confidence = candidates_[i].detection.presence_confidence;
+
+        merged.push_back(weighted);
+      }
+    }
+
+    candidates_ = std::move(merged);
+  }
+
+  auto HandPoseModel::crop_transform_from_palm_keypoints(const std::array<float, 14>& palm_keypoints,
+                                                          std::uint32_t image_width,
+                                                          std::uint32_t image_height) const -> CropTransform {
+    constexpr auto kWristIdx = std::uint32_t{0};
+    constexpr auto kMiddleMcpIdx = std::uint32_t{2};
+    constexpr auto kIndexMcpIdx = std::uint32_t{4};
+    constexpr auto kRingMcpIdx = std::uint32_t{6};
+
+    const auto wrist_x = palm_keypoints[kWristIdx * 2];
+    const auto wrist_y = palm_keypoints[kWristIdx * 2 + 1];
+    const auto middle_mcp_x = palm_keypoints[kMiddleMcpIdx * 2];
+    const auto middle_mcp_y = palm_keypoints[kMiddleMcpIdx * 2 + 1];
+
+    const auto palm_center_x = (wrist_x + middle_mcp_x) * 0.5F;
+    const auto palm_center_y = (wrist_y + middle_mcp_y) * 0.5F;
+
+    const auto dx = middle_mcp_x - wrist_x;
+    const auto dy = middle_mcp_y - wrist_y;
+    const auto palm_length = std::sqrt(dx * dx + dy * dy);
+
+    const auto index_mcp_x = palm_keypoints[kIndexMcpIdx * 2];
+    const auto index_mcp_y = palm_keypoints[kIndexMcpIdx * 2 + 1];
+    const auto ring_mcp_x = palm_keypoints[kRingMcpIdx * 2];
+    const auto ring_mcp_y = palm_keypoints[kRingMcpIdx * 2 + 1];
+    const auto palm_width_dx = ring_mcp_x - index_mcp_x;
+    const auto palm_width_dy = ring_mcp_y - index_mcp_y;
+    const auto palm_width = std::sqrt(palm_width_dx * palm_width_dx + palm_width_dy * palm_width_dy);
+
+    const auto palm_size = std::max(palm_length, palm_width);
+    auto expansion = base_roi_expansion_;
+
+    if (palm_size < small_hand_threshold_) {
+      expansion = small_hand_expansion_;
+    } else if (palm_size > large_hand_threshold_) {
+      expansion = large_hand_expansion_;
+    }
+
+    const auto dist_to_left = palm_center_x;
+    const auto dist_to_right = static_cast<float>(image_width) - palm_center_x;
+    const auto dist_to_top = palm_center_y;
+    const auto dist_to_bottom = static_cast<float>(image_height) - palm_center_y;
+    const auto min_boundary_dist = std::min({dist_to_left, dist_to_right, dist_to_top, dist_to_bottom});
+
+    if (min_boundary_dist < boundary_margin_) {
+      const auto boundary_factor = std::clamp(min_boundary_dist / boundary_margin_, boundary_min_factor_, 1.0F);
+      expansion *= boundary_factor;
+    }
+
+    const auto roi_size = palm_size * expansion;
+    const auto left =
+        std::clamp(palm_center_x - roi_size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_width) - 1.0F));
+    const auto top =
+        std::clamp(palm_center_y - roi_size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_height) - 1.0F));
+    const auto right = std::clamp(palm_center_x + roi_size * 0.5F, left + 1.0F, static_cast<float>(image_width));
+    const auto bottom = std::clamp(palm_center_y + roi_size * 0.5F, top + 1.0F, static_cast<float>(image_height));
+    const auto crop_size = std::min(right - left, bottom - top);
+
+    return CropTransform{.left = left, .top = top, .size = std::max(1.0F, crop_size)};
+  }
+
+  void HandPoseModel::try_tracking_from_previous_frame(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                                       const std::uint8_t* payload, std::uint64_t payload_size) {
+    for (auto& tracked : tracked_hands_) {
+      if (current_frame_number_ - tracked.last_seen_frame > max_tracking_gap_) {
+        continue;
+      }
+      if (tracked.presence_confidence < tracking_threshold_) {
+        continue;
+      }
+
+      const auto transform = crop_transform_from_box(tracked.roi, metadata.output_width, metadata.output_height);
+      std::array<HandPoseKeypoint, kHandPoseKeypointCount> keypoints{};
+      float presence = 0.0F;
+      bool is_left = false;
+
+      if (!extract_landmarks(metadata, payload, payload_size, transform, keypoints, presence, is_left)) {
+        continue;
+      }
+
+      tracked.smoothed_keypoints = keypoints;
+      tracked.palm_confidence = std::min(tracked.palm_confidence, presence);
+      tracked.presence_confidence = presence;
+      tracked.is_left_hand = is_left;
+      tracked.last_seen_frame = current_frame_number_;
+
+      auto left = std::numeric_limits<float>::max();
+      auto top = std::numeric_limits<float>::max();
+      auto right = 0.0F;
+      auto bottom = 0.0F;
+      for (const auto& kp : keypoints) {
+        left = std::min(left, kp.x);
+        top = std::min(top, kp.y);
+        right = std::max(right, kp.x);
+        bottom = std::max(bottom, kp.y);
+      }
+      tracked.roi = HandPoseBox{.left = left, .top = top, .right = right, .bottom = bottom};
+    }
+  }
+
+  void HandPoseModel::update_tracked_hands(const std::vector<PalmCandidate>& detected_hands) {
+    for (const auto& detected : detected_hands) {
+      if (!detected.detection.present) {
+        continue;
+      }
+
+      auto matched_idx = -1;
+      auto best_iou = tracking_iou_match_threshold_;
+
+      for (std::size_t i = 0; i < tracked_hands_.size(); ++i) {
+        if (tracked_hands_[i].last_seen_frame != current_frame_number_) {
+          continue;
+        }
+        const auto iou = compute_iou(tracked_hands_[i].roi, detected.detection.box);
+        if (iou > best_iou) {
+          best_iou = iou;
+          matched_idx = static_cast<int>(i);
+        }
+      }
+
+      if (matched_idx >= 0) {
+        auto& t = tracked_hands_[static_cast<std::size_t>(matched_idx)];
+        t.roi = detected.detection.box;
+        t.smoothed_keypoints = detected.detection.keypoints;
+        t.palm_confidence = detected.detection.confidence;
+        t.presence_confidence = detected.detection.presence_confidence;
+        t.is_left_hand = detected.detection.is_left_hand;
+      } else {
+        auto new_hand = TrackedHand{
+            .roi = detected.detection.box,
+            .palm_confidence = detected.detection.confidence,
+            .presence_confidence = detected.detection.presence_confidence,
+            .last_seen_frame = current_frame_number_,
+            .is_left_hand = detected.detection.is_left_hand,
+            .smoothed_keypoints = detected.detection.keypoints,
+        };
+
+        auto added = false;
+        for (auto& tracked : tracked_hands_) {
+          if (current_frame_number_ - tracked.last_seen_frame > max_stale_frames_) {
+            tracked = new_hand;
+            added = true;
+            break;
+          }
+        }
+
+        if (!added && tracked_hands_.size() < output_hands_) {
+          tracked_hands_.push_back(new_hand);
+        }
+      }
+    }
+  }
+
+  auto HandPoseModel::apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns) -> float {
+    if (!filter.initialized) {
+      filter.x = value;
+      filter.dx = 0.0F;
+      filter.last_time = timestamp_ns;
+      filter.initialized = true;
+      return value;
+    }
+
+    const auto dt = static_cast<float>(timestamp_ns - filter.last_time) / 1e9F;
+    if (dt <= 0.0F || dt > 1.0F) {
+      return value;
+    }
+
+    const auto alpha_d = 1.0F / (1.0F + (1.0F / (2.0F * kPi * filter.d_cutoff * dt)));
+    filter.dx = alpha_d * ((value - filter.x) / dt) + (1.0F - alpha_d) * filter.dx;
+
+    const auto cutoff = filter.min_cutoff + filter.beta * std::abs(filter.dx);
+    const auto alpha = 1.0F / (1.0F + (1.0F / (2.0F * kPi * cutoff * dt)));
+
+    filter.x = alpha * value + (1.0F - alpha) * filter.x;
+    filter.last_time = timestamp_ns;
+
+    return filter.x;
+  }
+
+  void HandPoseModel::smooth_keypoints_hand(std::size_t hand_index, std::uint64_t timestamp_ns) {
+    if (hand_index >= keypoint_filters_.size() || hand_index >= tracked_hands_.size()) {
+      return;
+    }
+
+    auto& filters = keypoint_filters_[hand_index];
+    auto& keypoints = tracked_hands_[hand_index].smoothed_keypoints;
+
+    if (filters.size() < kHandPoseKeypointCount * 3) {
+      return;
+    }
+
+    for (std::uint32_t i = 0; i < kHandPoseKeypointCount; ++i) {
+      keypoints[i].x = apply_one_euro_filter(filters[i * 3], keypoints[i].x, timestamp_ns);
+      keypoints[i].y = apply_one_euro_filter(filters[i * 3 + 1], keypoints[i].y, timestamp_ns);
+      keypoints[i].z = apply_one_euro_filter(filters[i * 3 + 2], keypoints[i].z, timestamp_ns);
+    }
   }
 
 } // namespace signlang::handpose_det
