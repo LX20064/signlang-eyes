@@ -100,6 +100,11 @@ namespace signlang::handpose_det {
     auto apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns) -> float;
 
     void smooth_keypoints_hand(std::size_t hand_index, std::uint64_t timestamp_ns);
+    void ensure_source_dma_buffer(std::uint64_t required_size) const;
+    auto source_dma_data() const -> std::uint8_t*;
+    auto source_dma_fd() const -> int;
+    void sync_source_dma_buffer(std::uint64_t flags) const;
+    void release_source_dma_buffer() const;
 
     std::string palm_detector_model_path_;
     std::string landmark_model_path_;
@@ -134,6 +139,9 @@ namespace signlang::handpose_det {
     std::uint32_t output_hands_;
     std::uint32_t model_width_;
     std::uint32_t model_height_;
+    mutable int source_dma_fd_;
+    mutable std::uint8_t* source_dma_data_;
+    mutable std::uint64_t source_dma_capacity_;
   };
 
 } // namespace signlang::handpose_det

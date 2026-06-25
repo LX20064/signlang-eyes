@@ -5,8 +5,17 @@
 #include "rga.h"
 #include "spdlog/spdlog.h"
 
+#include <fcntl.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-heap.h>
+#include <dirent.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -29,6 +38,16 @@ namespace signlang::handpose_det {
     constexpr auto kPalmBoxScale = 192.0F;
     constexpr auto kLandmarkValueCount = std::uint32_t{63};
     constexpr auto kPi = 3.14159265358979F;
+    constexpr auto kDmaHeapPaths = std::array{
+        "/dev/dma_heap/system-dma32",
+        "/dev/dma_heap/system-uncached-dma32",
+        "/dev/dma_heap/system-uncached",
+        "/dev/dma_heap/system",
+        "/dev/dma_heap/linux,cma",
+        "/dev/dma_heap/cma",
+        "/dev/dma_heap/cma-uncached",
+    };
+    constexpr auto kDmaHeapDirectory = "/dev/dma_heap";
 
     auto read_file(const std::string& path) -> std::vector<std::uint8_t> {
       std::ifstream file{path, std::ios::binary | std::ios::ate};
@@ -129,12 +148,74 @@ namespace signlang::handpose_det {
       throw std::runtime_error("Unsupported RKNN tensor type");
     }
 
-    void resize_rgb_with_rga(const std::uint8_t* src_data, std::uint32_t src_width, std::uint32_t src_height,
+    void append_open_error(std::string& open_errors, const std::string& heap_path, int error_number) {
+      if (!open_errors.empty()) {
+        open_errors += "; ";
+      }
+      open_errors += heap_path + " errno=" + std::to_string(error_number);
+    }
+
+    auto try_allocate_dma_heap_buffer(const std::string& heap_path, std::uint64_t size_bytes,
+                                      std::string& open_errors) -> int {
+      const auto heap_fd = ::open(heap_path.c_str(), O_RDWR | O_CLOEXEC);
+      if (heap_fd < 0) {
+        append_open_error(open_errors, heap_path, errno);
+        return -1;
+      }
+
+      auto allocation = dma_heap_allocation_data{};
+      allocation.len = size_bytes;
+      allocation.fd_flags = O_RDWR | O_CLOEXEC;
+      allocation.heap_flags = 0;
+
+      if (::ioctl(heap_fd, DMA_HEAP_IOCTL_ALLOC, &allocation) < 0) {
+        const auto saved_errno = errno;
+        ::close(heap_fd);
+        throw std::runtime_error("Failed to allocate handpose DMA heap buffer from " + heap_path +
+                                 ", errno=" + std::to_string(saved_errno));
+      }
+
+      ::close(heap_fd);
+      return static_cast<int>(allocation.fd);
+    }
+
+    auto allocate_dma_heap_buffer(std::uint64_t size_bytes) -> int {
+      auto open_errors = std::string{};
+      for (const auto* heap_path : kDmaHeapPaths) {
+        const auto fd = try_allocate_dma_heap_buffer(heap_path, size_bytes, open_errors);
+        if (fd >= 0) {
+          return fd;
+        }
+      }
+
+      auto* directory = ::opendir(kDmaHeapDirectory);
+      if (directory == nullptr) {
+        append_open_error(open_errors, kDmaHeapDirectory, errno);
+      } else {
+        while (auto* entry = ::readdir(directory)) {
+          const auto name = std::string{entry->d_name};
+          if (name == "." || name == "..") {
+            continue;
+          }
+          const auto heap_path = std::string{kDmaHeapDirectory} + "/" + name;
+          const auto fd = try_allocate_dma_heap_buffer(heap_path, size_bytes, open_errors);
+          if (fd >= 0) {
+            ::closedir(directory);
+            return fd;
+          }
+        }
+        ::closedir(directory);
+      }
+
+      throw std::runtime_error("Failed to open any handpose DMA heap: " + open_errors);
+    }
+
+    void resize_rgb_with_rga(int src_fd, std::uint32_t src_width, std::uint32_t src_height,
                              std::uint8_t* dst_data, std::uint32_t dst_width, std::uint32_t dst_height,
                              im_rect src_rect) {
       const auto src_size = checked_rgb_size_bytes(src_width, src_height);
       const auto dst_size = checked_rgb_size_bytes(dst_width, dst_height);
-      const auto src_handle = importbuffer_virtualaddr(const_cast<std::uint8_t*>(src_data), static_cast<int>(src_size));
+      const auto src_handle = importbuffer_fd(src_fd, static_cast<int>(src_size));
       if (src_handle == 0) {
         throw std::runtime_error("RGA: failed to import handpose source buffer");
       }
@@ -293,7 +374,8 @@ namespace signlang::handpose_det {
       euro_beta_{options.euro_beta}, euro_d_cutoff_{options.euro_d_cutoff},
       handedness_threshold_{options.handedness_threshold}, max_tracking_gap_{options.max_tracking_gap},
       max_stale_frames_{options.max_stale_frames}, keypoint_count_{options.keypoint_count},
-      output_hands_{options.output_hands}, model_width_{kPalmInputSize}, model_height_{kPalmInputSize} {
+      output_hands_{options.output_hands}, model_width_{kPalmInputSize}, model_height_{kPalmInputSize}, source_dma_fd_{-1},
+      source_dma_data_{nullptr}, source_dma_capacity_{0} {
     if (keypoint_count_ != kHandPoseKeypointCount) {
       throw std::runtime_error("MediaPipe hand landmark model requires exactly 21 keypoints");
     }
@@ -318,7 +400,59 @@ namespace signlang::handpose_det {
     }
   }
 
-  HandPoseModel::~HandPoseModel() = default;
+  HandPoseModel::~HandPoseModel() { release_source_dma_buffer(); }
+
+  void HandPoseModel::ensure_source_dma_buffer(std::uint64_t required_size) const {
+    if (source_dma_fd_ >= 0 && source_dma_capacity_ >= required_size) {
+      return;
+    }
+
+    release_source_dma_buffer();
+    source_dma_fd_ = allocate_dma_heap_buffer(required_size);
+    source_dma_data_ = static_cast<std::uint8_t*>(
+        ::mmap(nullptr, required_size, PROT_READ | PROT_WRITE, MAP_SHARED, source_dma_fd_, 0));
+    if (source_dma_data_ == MAP_FAILED) {
+      source_dma_data_ = nullptr;
+      const auto saved_errno = errno;
+      ::close(source_dma_fd_);
+      source_dma_fd_ = -1;
+      throw std::runtime_error("Failed to mmap handpose DMA source buffer, errno=" + std::to_string(saved_errno));
+    }
+    source_dma_capacity_ = required_size;
+  }
+
+  auto HandPoseModel::source_dma_data() const -> std::uint8_t* {
+    if (source_dma_data_ == nullptr) {
+      throw std::runtime_error("Handpose DMA source buffer is not mapped");
+    }
+    return source_dma_data_;
+  }
+
+  auto HandPoseModel::source_dma_fd() const -> int {
+    if (source_dma_fd_ < 0) {
+      throw std::runtime_error("Handpose DMA source buffer fd is not valid");
+    }
+    return source_dma_fd_;
+  }
+
+  void HandPoseModel::sync_source_dma_buffer(std::uint64_t flags) const {
+    auto sync = dma_buf_sync{.flags = flags};
+    if (::ioctl(source_dma_fd(), DMA_BUF_IOCTL_SYNC, &sync) < 0) {
+      throw std::runtime_error("Failed to sync handpose DMA source buffer, errno=" + std::to_string(errno));
+    }
+  }
+
+  void HandPoseModel::release_source_dma_buffer() const {
+    if (source_dma_data_ != nullptr) {
+      ::munmap(source_dma_data_, source_dma_capacity_);
+      source_dma_data_ = nullptr;
+    }
+    if (source_dma_fd_ >= 0) {
+      ::close(source_dma_fd_);
+      source_dma_fd_ = -1;
+    }
+    source_dma_capacity_ = 0;
+  }
 
   auto HandPoseModel::run(const signlang::video_frontend::VideoFrameMetadata& metadata, const std::uint8_t* payload,
                           std::uint64_t payload_size, iox2::bb::MutableSlice<HandPoseDetection> detections)
@@ -326,6 +460,21 @@ namespace signlang::handpose_det {
     if (detections.number_of_elements() < output_hands_) {
       throw std::runtime_error("Hand pose output slice is smaller than requested hand count");
     }
+    if (metadata.pixel_format != signlang::video_frontend::kPixelFormatRgb24) {
+      throw std::runtime_error("Hand pose detector supports RGB24 video input only");
+    }
+    if (metadata.output_width == 0 || metadata.output_height == 0) {
+      throw std::runtime_error("Invalid upstream video frame dimensions");
+    }
+    const auto source_size = checked_rgb_size_bytes(metadata.output_width, metadata.output_height);
+    if (payload_size < source_size) {
+      throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
+    }
+
+    ensure_source_dma_buffer(source_size);
+    sync_source_dma_buffer(DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+    std::memcpy(source_dma_data(), payload, static_cast<std::size_t>(source_size));
+    sync_source_dma_buffer(DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
 
     for (std::uint32_t i = 0; i < output_hands_; ++i) {
       detections[i] = HandPoseDetection{};
@@ -479,12 +628,6 @@ namespace signlang::handpose_det {
 
   void HandPoseModel::run_palm_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
                                         const std::uint8_t* payload, std::uint64_t payload_size) {
-    if (metadata.pixel_format != signlang::video_frontend::kPixelFormatRgb24) {
-      throw std::runtime_error("Hand pose detector supports RGB24 video input only");
-    }
-    if (metadata.output_width == 0 || metadata.output_height == 0) {
-      throw std::runtime_error("Invalid upstream video frame dimensions");
-    }
     if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
       throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
     }
@@ -493,7 +636,7 @@ namespace signlang::handpose_det {
                                     .y = 0,
                                     .width = static_cast<int>(metadata.output_width),
                                     .height = static_cast<int>(metadata.output_height)};
-    resize_rgb_with_rga(payload, metadata.output_width, metadata.output_height, palm_detector_->input_data(),
+    resize_rgb_with_rga(source_dma_fd(), metadata.output_width, metadata.output_height, palm_detector_->input_data(),
                         palm_detector_->width(), palm_detector_->height(), full_frame);
     palm_detector_->run();
 
@@ -570,7 +713,7 @@ namespace signlang::handpose_det {
     if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
       return false;
     }
-    resize_rgb_with_rga(payload, metadata.output_width, metadata.output_height, landmark_model_->input_data(),
+    resize_rgb_with_rga(source_dma_fd(), metadata.output_width, metadata.output_height, landmark_model_->input_data(),
                         landmark_model_->width(), landmark_model_->height(), src_rect);
     landmark_model_->run();
 
