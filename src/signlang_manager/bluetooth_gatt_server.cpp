@@ -268,6 +268,18 @@ namespace signlang::signlang_manager {
                                             "Unknown advertisement method");
     }
 
+    void name_owner_changed(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*, GVariant* parameters,
+                            gpointer user_data) {
+      auto* server = static_cast<BluetoothGattServer*>(user_data);
+      const char* name = nullptr;
+      const char* old_owner = nullptr;
+      const char* new_owner = nullptr;
+      g_variant_get(parameters, "(&s&s&s)", &name, &old_owner, &new_owner);
+      if (name != nullptr && new_owner != nullptr && new_owner[0] == '\0') {
+        server->release_notify_owner_if_matches(name);
+      }
+    }
+
     const auto kObjectManagerVtable = GDBusInterfaceVTable{object_manager_method_call, nullptr, nullptr};
     const auto kServiceVtable = GDBusInterfaceVTable{nullptr, service_get_property, nullptr};
     const auto kCharacteristicVtable =
@@ -391,9 +403,17 @@ namespace signlang::signlang_manager {
     if (object_registration_ids_.back() == 0) {
       throw std::runtime_error(std::string{"Failed to register BLE advertisement object: "} + error.error->message);
     }
+
+    name_owner_watch_id_ = g_dbus_connection_signal_subscribe(
+        connection_, "org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+        "/org/freedesktop/DBus", nullptr, G_DBUS_SIGNAL_FLAGS_NONE, name_owner_changed, this, nullptr);
   }
 
   void BluetoothGattServer::unregister_objects() {
+    if (name_owner_watch_id_ != 0 && connection_ != nullptr) {
+      g_dbus_connection_signal_unsubscribe(connection_, name_owner_watch_id_);
+      name_owner_watch_id_ = 0;
+    }
     for (const auto registration_id : object_registration_ids_) {
       if (registration_id != 0 && connection_ != nullptr) {
         g_dbus_connection_unregister_object(connection_, registration_id);
@@ -480,6 +500,18 @@ namespace signlang::signlang_manager {
     }
 
     spdlog::info("BLE handpose stream unsubscribed by {}", notify_owner_.empty() ? "<unknown>" : notify_owner_);
+    notify_owner_.clear();
+    notifications_enabled_.store(false);
+  }
+
+  void BluetoothGattServer::release_notify_owner_if_matches(const char* owner_name) {
+    const auto owner = std::string{owner_name == nullptr ? "" : owner_name};
+    std::lock_guard lock(mutex_);
+    if (notify_owner_.empty() || notify_owner_ != owner) {
+      return;
+    }
+
+    spdlog::info("BLE handpose stream owner {} disappeared; releasing subscription", notify_owner_);
     notify_owner_.clear();
     notifications_enabled_.store(false);
   }

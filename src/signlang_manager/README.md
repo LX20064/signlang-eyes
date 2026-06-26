@@ -31,7 +31,7 @@ Characteristics:
 Payloads use the versioned packet format in `protocol.{hpp,cpp}`. Larger notifications are split by
 `--max-notify-payload`; the receiver should reassemble packets using the protocol header length and payload length.
 Only one BLE client may subscribe to streaming notifications at a time. Additional `StartNotify` attempts are rejected
-until the current streaming client calls `StopNotify` or disconnect handling releases the subscription.
+until the current streaming client calls `StopNotify` or its D-Bus owner disappears after disconnect.
 
 ## Commands
 

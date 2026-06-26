@@ -37,6 +37,7 @@ namespace signlang::signlang_manager {
     void stop();
     auto request_start_notify(const char* sender) -> bool;
     void request_stop_notify(const char* sender);
+    void release_notify_owner_if_matches(const char* owner_name);
     void handle_write_value(const std::vector<std::uint8_t>& value);
     void notify_packet(const std::vector<std::uint8_t>& packet);
     auto notifications_enabled() const -> bool;
@@ -59,6 +60,7 @@ namespace signlang::signlang_manager {
     GDBusNodeInfo* characteristic_node_{nullptr};
     GDBusNodeInfo* advertisement_node_{nullptr};
     std::vector<unsigned int> object_registration_ids_;
+    unsigned int name_owner_watch_id_{0};
     std::thread loop_thread_;
     PacketHandler handler_;
     mutable std::mutex mutex_;
