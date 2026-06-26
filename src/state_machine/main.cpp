@@ -1,29 +1,12 @@
 #include "app_state.hpp"
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
 #include "spdlog/spdlog.h"
 #include "state_control.hpp"
 
 #include <chrono>
-#include <csignal>
-#include <exception>
-#include <iostream>
 #include <thread>
-#include <variant>
-
-namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int /* signal_number */) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
-
-} // namespace
 
 auto main(int argc, char** argv) -> int {
   using signlang::state_machine::app_state_name;
@@ -31,23 +14,9 @@ auto main(int argc, char** argv) -> int {
   using signlang::state_machine::IpcStateControlServer;
   using signlang::state_machine::IpcStatePublisher;
   using signlang::state_machine::parse_program_options;
-  using signlang::state_machine::ProgramOptions;
-  using signlang::state_machine::ProgramUsage;
   using signlang::state_machine::StateController;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto& options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting state machine");
     spdlog::info("State event service: {}", options.state_event_service_name);
     spdlog::info("State blackboard service: {}", options.state_blackboard_service_name);
@@ -60,7 +29,7 @@ auto main(int argc, char** argv) -> int {
 
     spdlog::info("Published initial app state: {}", app_state_name(state_publisher.current_state()));
 
-    while (g_should_stop == 0) {
+    while (!signlang::runtime::shutdown_requested()) {
       const auto now = StateController::Clock::now();
       if (state_controller.expire_special_state(now)) {
         spdlog::info("Special state expired, returning to normal");
@@ -72,8 +41,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& error) {
-    spdlog::error("{}", error.what());
-    return 1;
-  }
+  });
 }

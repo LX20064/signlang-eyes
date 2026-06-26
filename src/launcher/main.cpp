@@ -1,6 +1,6 @@
 #include "program_options.hpp"
 
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "spdlog/spdlog.h"
 #include "toml.hpp"
 
@@ -92,9 +92,6 @@ namespace {
   };
 
   std::vector<ChildInfo> g_children;
-  volatile std::sig_atomic_t g_shutdown = 0;
-
-  void handle_signal(int /* sig */) { g_shutdown = 1; }
 
   void terminate_all_children() {
     for (const auto& child : g_children) {
@@ -561,9 +558,8 @@ auto main(int argc, char** argv) -> int {
     // Warn about any IPC service keys in the TOML
     warn_ipc_keys_in_config(config);
 
-    std::signal(SIGINT, handle_signal);
-    std::signal(SIGTERM, handle_signal);
-    std::signal(SIGCHLD, handle_signal);
+    signlang::runtime::install_shutdown_signal_handlers();
+    std::signal(SIGCHLD, signlang::runtime::request_shutdown);
 
     struct ModuleEntry {
       std::string name;
@@ -608,7 +604,7 @@ auto main(int argc, char** argv) -> int {
 
     spdlog::info("[launcher] all {} modules running, monitoring...", g_children.size());
 
-    while (g_shutdown == 0) {
+    while (!signlang::runtime::shutdown_requested()) {
       int status = 0;
       const auto pid = waitpid(-1, &status, WNOHANG);
 
@@ -628,7 +624,7 @@ auto main(int argc, char** argv) -> int {
           }
           g_children.erase(it);
         }
-        g_shutdown = 1;
+        signlang::runtime::request_shutdown(SIGCHLD);
       } else if (pid == 0) {
         struct timespec ts{.tv_sec = 0, .tv_nsec = 500000000};
         nanosleep(&ts, nullptr);

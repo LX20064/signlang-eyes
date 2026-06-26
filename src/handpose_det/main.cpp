@@ -1,4 +1,4 @@
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "handpose_model.hpp"
 #include "handpose_transport.hpp"
 #include "program_options.hpp"
@@ -6,25 +6,8 @@
 
 #include <array>
 #include <chrono>
-#include <csignal>
-#include <exception>
-#include <iostream>
 #include <optional>
 #include <thread>
-#include <variant>
-
-namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int /* signal_number */) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
-
-} // namespace
 
 auto main(int argc, char** argv) -> int {
   using signlang::handpose_det::HandPoseDetection;
@@ -32,22 +15,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::handpose_det::HandPoseTransport;
   using signlang::handpose_det::IpcHandPoseStateMonitor;
   using signlang::handpose_det::parse_program_options;
-  using signlang::handpose_det::ProgramOptions;
-  using signlang::handpose_det::ProgramUsage;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto& options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting hand pose detector");
     spdlog::info("Palm detector model: {}", options.palm_detector_model_path);
     spdlog::info("Landmark model: {}", options.landmark_model_path);
@@ -71,18 +40,18 @@ auto main(int argc, char** argv) -> int {
 
     std::uint64_t sequence_number = 0;
     std::array<HandPoseDetection, 2> detection_buffer{};
-    while (g_should_stop == 0 && transport.wait_for_work()) {
+    while (!signlang::runtime::shutdown_requested() && transport.wait_for_work()) {
       poll_gate();
 
       if (!gate_enabled()) {
         // Poll for state change with stop check to avoid hang on shutdown
-        while (g_should_stop == 0 && !gate_enabled()) {
+        while (!signlang::runtime::shutdown_requested() && !gate_enabled()) {
           poll_gate();
           if (!gate_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
           }
         }
-        if (g_should_stop != 0) {
+        if (signlang::runtime::shutdown_requested()) {
           break;
         }
         continue;
@@ -104,8 +73,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& error) {
-    spdlog::error("{}", error.what());
-    return 1;
-  }
+  });
 }

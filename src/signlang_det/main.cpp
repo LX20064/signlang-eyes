@@ -1,4 +1,4 @@
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "feature_extractor.hpp"
 #include "iceoryx_gateway.hpp"
 #include "keypoint_ring_buffer.hpp"
@@ -10,25 +10,13 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
-#include <variant>
 
 namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
 
   auto build_result(const std::vector<signlang::signlang_det::FeatureVector>& window,
                     const signlang::signlang_det::SignlangModel::InferenceResult& inference,
@@ -223,22 +211,8 @@ auto main(int argc, char** argv) -> int {
   using signlang::signlang_det::compute_buffer_capacity;
   using signlang::signlang_det::KeypointRingBuffer;
   using signlang::signlang_det::parse_program_options;
-  using signlang::signlang_det::ProgramOptions;
-  using signlang::signlang_det::ProgramUsage;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting sign language detector");
     spdlog::info("Model: {}", options.model_path);
     spdlog::info("Sequence length: {}, overlap ratio: {:.1f}%", options.sequence_length, options.overlap_ratio * 100);
@@ -276,7 +250,7 @@ auto main(int argc, char** argv) -> int {
       }
     }};
 
-    while (g_should_stop == 0 && !should_stop.load()) {
+    while (!signlang::runtime::shutdown_requested() && !should_stop.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -291,8 +265,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& e) {
-    spdlog::error("Error: {}", e.what());
-    return 1;
-  }
+  });
 }

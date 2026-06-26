@@ -1,5 +1,5 @@
 #include "common/audio_ring_buffer.hpp"
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
 #include "spdlog/spdlog.h"
@@ -9,27 +9,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
-#include <variant>
 
 namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int /* signal_number */) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
 
   auto is_dangerous_sound_label(const std::array<char, signlang::env_sound_det::kMaxClassLabelLength>& label) -> bool {
     const std::string_view label_view{label.data()};
@@ -64,23 +52,9 @@ auto main(int argc, char** argv) -> int {
   using signlang::env_sound_det::IpcStateControlClient;
   using signlang::env_sound_det::kYamnetSampleRateHz;
   using signlang::env_sound_det::parse_program_options;
-  using signlang::env_sound_det::ProgramOptions;
-  using signlang::env_sound_det::ProgramUsage;
   using signlang::env_sound_det::YamnetModel;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting environment sound detector");
     spdlog::info("Model: {}", options.model_path);
     spdlog::info("Window: {}ms, overlap: {:.1f}%", options.window_ms, options.overlap_ratio * 100);
@@ -147,7 +121,7 @@ auto main(int argc, char** argv) -> int {
       }
     }};
 
-    while (!should_stop.load() && g_should_stop == 0) {
+    while (!should_stop.load() && !signlang::runtime::shutdown_requested()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -162,8 +136,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& error) {
-    spdlog::error("{}", error.what());
-    return 1;
-  }
+  });
 }

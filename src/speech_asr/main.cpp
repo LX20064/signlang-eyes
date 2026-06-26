@@ -1,5 +1,5 @@
 #include "common/audio_ring_buffer.hpp"
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
 #include "spdlog/spdlog.h"
@@ -10,27 +10,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <variant>
 
 namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int /* signal_number */) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
 
   auto ring_capacity_samples(std::uint64_t window_sample_count, std::uint64_t hop_sample_count) -> std::uint64_t {
     const auto minimum_capacity = window_sample_count + std::max(window_sample_count, hop_sample_count);
@@ -82,24 +70,10 @@ auto main(int argc, char** argv) -> int {
   using signlang::speech_asr::IpcResultPublisher;
   using signlang::speech_asr::kWhisperSampleRateHz;
   using signlang::speech_asr::parse_program_options;
-  using signlang::speech_asr::ProgramOptions;
-  using signlang::speech_asr::ProgramUsage;
   using signlang::speech_asr::SpeechAsrResult;
   using signlang::speech_asr::WhisperModel;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting speech ASR");
     spdlog::info("Language: {}", options.language == AsrLanguage::English ? "English" : "Chinese");
     spdlog::info("Encoder model: {}", options.encoder_model_path);
@@ -215,7 +189,7 @@ auto main(int argc, char** argv) -> int {
       }
     }};
 
-    while (!should_stop.load() && g_should_stop == 0) {
+    while (!should_stop.load() && !signlang::runtime::shutdown_requested()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -230,8 +204,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& error) {
-    spdlog::error("{}", error.what());
-    return 1;
-  }
+  });
 }
