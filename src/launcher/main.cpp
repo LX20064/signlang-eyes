@@ -31,6 +31,7 @@ namespace signlang::launcher::ipc {
   constexpr auto kSpeechAsrOutput = "speech_asr_result";
   constexpr auto kHandposeOutput = "handpose_result";
   constexpr auto kSignlangOutput = "signlang_result";
+  constexpr auto kSignlangPrototypeControl = "signlang_prototype_control";
   constexpr auto kStateEvent = "app_state_event";
   constexpr auto kStateBlackboard = "app_state_blackboard";
   constexpr auto kStateControl = "app_state_control";
@@ -46,6 +47,7 @@ namespace {
   constexpr auto kExeSpeechAsr = "bin/speech_asr";
   constexpr auto kExeEnvSoundDet = "bin/env_sound_det";
   constexpr auto kExeHandposeDet = "bin/handpose_det";
+  constexpr auto kExeSignlangManager = "bin/signlang_manager";
   constexpr auto kExeSignlangDet = "bin/signlang_det";
 
   constexpr std::array kIpcKeys = {
@@ -69,7 +71,7 @@ namespace {
   void warn_ipc_keys_in_config(const toml::table& config) {
     constexpr std::array kSections = {
         "state_machine", "audio_frontend", "video_frontend", "speech_asr",
-        "env_sound_det", "handpose_det",   "signlang_det",
+        "env_sound_det", "handpose_det",   "signlang_manager", "signlang_det",
     };
 
     for (const auto* section_name : kSections) {
@@ -460,8 +462,8 @@ static auto build_signlang_det_args(const toml::table& cfg) -> std::vector<std::
   using namespace signlang::launcher::ipc;
   std::vector<std::string> args = {
       kExeSignlangDet,  "--input-service",       kHandposeOutput, "--output-service",
-      kSignlangOutput,  "--state-event-service", kStateEvent,     "--state-blackboard-service",
-      kStateBlackboard,
+      kSignlangOutput,  "--prototype-control-service", kSignlangPrototypeControl,
+      "--state-event-service", kStateEvent,     "--state-blackboard-service", kStateBlackboard,
   };
 
   if (const auto* tbl = cfg["signlang_det"].as_table()) {
@@ -477,6 +479,31 @@ static auto build_signlang_det_args(const toml::table& cfg) -> std::vector<std::
     add_opt_str(args, "--npu-core", opt_string(*tbl, "npu_core"));
     add_opt_int(args, "--subscriber-buffer", opt_int(*tbl, "subscriber_buffer"));
   }
+  return args;
+}
+
+static auto build_signlang_manager_args(const toml::table& cfg) -> std::vector<std::string> {
+  using namespace signlang::launcher::ipc;
+  std::vector<std::string> args = {
+      kExeSignlangManager, "--input-service", kHandposeOutput, "--signlang-control-service",
+      kSignlangPrototypeControl,
+  };
+
+  if (const auto* tbl = cfg["signlang_manager"].as_table()) {
+    add_opt_str(args, "--bluetooth-name", opt_string(*tbl, "bluetooth_name"));
+    add_opt_str(args, "--adapter-path", opt_string(*tbl, "adapter_path"));
+    add_opt_str(args, "--model", opt_string(*tbl, "model"));
+    add_opt_str(args, "--prototypes", opt_string(*tbl, "prototypes"));
+    add_opt_double(args, "--min-confidence", opt_double(*tbl, "min_confidence"));
+    add_opt_double(args, "--motion-weight", opt_double(*tbl, "motion_weight"));
+    add_opt_double(args, "--upload-window-overlap", opt_double(*tbl, "upload_window_overlap"));
+    add_opt_int(args, "--subscriber-buffer", opt_int(*tbl, "subscriber_buffer"));
+    add_opt_int(args, "--stream-fps", opt_int(*tbl, "stream_fps"));
+    add_opt_int(args, "--max-notify-payload", opt_int(*tbl, "max_notify_payload"));
+    add_opt_str(args, "--npu-core", opt_string(*tbl, "npu_core"));
+    add_opt_bool_true(args, "--enable-streaming-by-default", opt_bool(*tbl, "enable_streaming_by_default"));
+  }
+
   return args;
 }
 
@@ -535,6 +562,7 @@ auto main(int argc, char** argv) -> int {
         {"state_machine", build_state_machine_args(config)},   {"audio_frontend", build_audio_frontend_args(config)},
         {"video_frontend", build_video_frontend_args(config)}, {"speech_asr", build_speech_asr_args(config)},
         {"env_sound_det", build_env_sound_det_args(config)},   {"handpose_det", build_handpose_det_args(config)},
+        {"signlang_manager", build_signlang_manager_args(config)},
         {"signlang_det", build_signlang_det_args(config)},
     };
 

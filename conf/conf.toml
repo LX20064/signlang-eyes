@@ -69,3 +69,17 @@ npu_core = "0"
 # confidence_threshold = 0.6       # Minimum recognition confidence
 # confidence_margin = 0.1          # Min top-1 vs top-2 margin
 # subscriber_buffer = 2
+
+[signlang_manager]
+npu_core = "0"
+# bluetooth_name = "SignLang Eyes"
+# adapter_path = "/org/bluez/hci0"
+# model = "models/signlang/signlang.rknn"
+# prototypes = "models/signlang/prototypes.sqlite"
+# min_confidence = 0.3
+# motion_weight = 0.0
+# upload_window_overlap = 0.5
+# subscriber_buffer = 2
+# stream_fps = 30
+# max_notify_payload = 180
+# enable_streaming_by_default = false

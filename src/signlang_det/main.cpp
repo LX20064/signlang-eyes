@@ -14,6 +14,7 @@
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <thread>
 #include <variant>
 
@@ -92,6 +93,10 @@ namespace {
                       signlang::signlang_det::KeypointRingBuffer& ring_buffer, const std::atomic<bool>& should_stop) {
     using signlang::signlang_det::IpcSignlangDetStateMonitor;
     using signlang::signlang_det::IpcSignlangPublisher;
+    using signlang::signlang_det::IpcPrototypeControlServer;
+    using signlang::signlang_det::PrototypeControlCommand;
+    using signlang::signlang_det::PrototypeControlResponse;
+    using signlang::signlang_det::PrototypeControlStatus;
     using signlang::signlang_det::SignlangModel;
 
     auto model = SignlangModel{options.model_path, options.prototypes_path, options.npu_core_mask,
@@ -104,6 +109,41 @@ namespace {
     spdlog::info("Sign language model loaded successfully");
 
     auto publisher = IpcSignlangPublisher{options.output_service_name};
+    auto prototype_control_server = std::optional<IpcPrototypeControlServer>{};
+    if (options.prototype_control_service_name.has_value()) {
+      prototype_control_server.emplace(options.prototype_control_service_name.value());
+    }
+    auto control_response = [&](const auto& request) {
+      auto response = PrototypeControlResponse{};
+      response.status = PrototypeControlStatus::Ok;
+      response.request_id = request.request_id;
+      response.loaded_gesture_count = static_cast<std::uint32_t>(model.loaded_gesture_count());
+      response.loaded_sample_count = static_cast<std::uint32_t>(model.loaded_sample_count());
+      auto copy_message = [&](const std::string& message) {
+        std::fill(response.message.begin(), response.message.end(), '\0');
+        const auto count = std::min(message.size(), response.message.size() - 1);
+        std::copy_n(message.data(), count, response.message.data());
+      };
+
+      try {
+        if (request.command == PrototypeControlCommand::ReloadPrototypes) {
+          model.reload_prototypes(options.prototypes_path);
+          response.loaded_gesture_count = static_cast<std::uint32_t>(model.loaded_gesture_count());
+          response.loaded_sample_count = static_cast<std::uint32_t>(model.loaded_sample_count());
+          copy_message("reloaded");
+        } else if (request.command == PrototypeControlCommand::GetStatus) {
+          copy_message("ok");
+        } else {
+          response.status = PrototypeControlStatus::UnsupportedCommand;
+          copy_message("unsupported command");
+        }
+      } catch (const std::exception& error) {
+        response.status = PrototypeControlStatus::Failed;
+        copy_message(error.what());
+      }
+
+      return response;
+    };
     auto state_monitor = std::optional<IpcSignlangDetStateMonitor>{};
     if (options.state_event_service_name.has_value() && options.state_blackboard_service_name.has_value()) {
       state_monitor.emplace(options.state_event_service_name.value(), options.state_blackboard_service_name.value());
@@ -122,11 +162,17 @@ namespace {
     while (!should_stop) {
       // Check for state changes before waiting for buffer
       poll_gate();
+      if (prototype_control_server.has_value()) {
+        prototype_control_server->process_pending_requests(control_response);
+      }
 
       if (!gate_enabled()) {
         // Poll for state change with stop check to avoid hang on shutdown
         while (!should_stop.load() && !gate_enabled()) {
           poll_gate();
+          if (prototype_control_server.has_value()) {
+            prototype_control_server->process_pending_requests(control_response);
+          }
           if (!gate_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
           }

@@ -142,10 +142,6 @@ namespace signlang::signlang_det {
       store.gestures_.push_back(std::move(gesture));
     }
 
-    if (store.gestures_.empty()) {
-      throw std::runtime_error("Prototype SQLite database contains no enabled gestures: " + path);
-    }
-
     return store;
   }
 
@@ -443,6 +439,23 @@ namespace signlang::signlang_det {
   SignlangModel::~SignlangModel() = default;
 
   auto SignlangModel::expected_sequence_length() const -> std::uint32_t { return encoder_->sequence_length(); }
+
+  void SignlangModel::reload_prototypes(const std::string& prototypes_path) {
+    auto next_store = PrototypeStore::load(prototypes_path);
+    if (next_store.embedding_dim() != encoder_->embedding_dim()) {
+      throw std::runtime_error("Reloaded prototype embedding dimension mismatch: encoder outputs " +
+                               std::to_string(encoder_->embedding_dim()) + ", prototypes contain " +
+                               std::to_string(next_store.embedding_dim()));
+    }
+
+    prototypes_ = std::move(next_store);
+    spdlog::info("Reloaded {} prototype samples across {} enabled gestures", prototypes_.sample_count(),
+                 prototypes_.gesture_count());
+  }
+
+  auto SignlangModel::loaded_gesture_count() const -> std::size_t { return prototypes_.gesture_count(); }
+
+  auto SignlangModel::loaded_sample_count() const -> std::size_t { return prototypes_.sample_count(); }
 
   auto SignlangModel::get_gesture_name(std::uint32_t gesture_id) const -> const char* {
     return prototypes_.gesture_name(gesture_id);

@@ -80,6 +80,36 @@ set_target_properties(fftw3f PROPERTIES
 # System dependencies
 find_package(ALSA REQUIRED)
 
+# GLib/GIO for BlueZ D-Bus BLE GATT server
+find_path(SIGNLANG_GLIB_INCLUDE_DIR
+    NAMES glib.h
+    PATH_SUFFIXES glib-2.0)
+find_path(SIGNLANG_GLIB_CONFIG_INCLUDE_DIR
+    NAMES glibconfig.h
+    PATH_SUFFIXES lib/glib-2.0/include glib-2.0/include)
+find_path(SIGNLANG_GIO_INCLUDE_DIR
+    NAMES gio/gio.h
+    PATH_SUFFIXES glib-2.0)
+find_library(SIGNLANG_GIO_LIBRARY NAMES gio-2.0)
+find_library(SIGNLANG_GOBJECT_LIBRARY NAMES gobject-2.0)
+find_library(SIGNLANG_GLIB_LIBRARY NAMES glib-2.0)
+
+if(SIGNLANG_GLIB_INCLUDE_DIR AND SIGNLANG_GLIB_CONFIG_INCLUDE_DIR AND SIGNLANG_GIO_INCLUDE_DIR
+        AND SIGNLANG_GIO_LIBRARY AND SIGNLANG_GOBJECT_LIBRARY AND SIGNLANG_GLIB_LIBRARY)
+    add_library(signlang_gio INTERFACE)
+    target_include_directories(signlang_gio INTERFACE
+        ${SIGNLANG_GLIB_INCLUDE_DIR}
+        ${SIGNLANG_GLIB_CONFIG_INCLUDE_DIR}
+        ${SIGNLANG_GIO_INCLUDE_DIR})
+    target_link_libraries(signlang_gio INTERFACE
+        ${SIGNLANG_GIO_LIBRARY}
+        ${SIGNLANG_GOBJECT_LIBRARY}
+        ${SIGNLANG_GLIB_LIBRARY})
+    add_library(signlang::gio ALIAS signlang_gio)
+else()
+    message(WARNING "GLib/GIO development files were not found; signlang_manager will be skipped")
+endif()
+
 # RKNN Runtime headers
 add_library(signlang_rknn_headers INTERFACE)
 target_include_directories(signlang_rknn_headers INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rknn_runtime/include)
