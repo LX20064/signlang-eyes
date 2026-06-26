@@ -94,6 +94,25 @@ namespace signlang::signlang_manager {
       return node;
     }
 
+    auto connect_system_bus() -> GDBusConnection* {
+      auto error = GErrorGuard{};
+      auto* address = g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SYSTEM, nullptr, &error.error);
+      if (address == nullptr) {
+        throw std::runtime_error(std::string{"Failed to resolve system D-Bus address: "} + error.error->message);
+      }
+
+      auto* connection = g_dbus_connection_new_for_address_sync(
+          address,
+          static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
+                                            G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+          nullptr, nullptr, &error.error);
+      g_free(address);
+      if (connection == nullptr) {
+        throw std::runtime_error(std::string{"Failed to connect to system D-Bus: "} + error.error->message);
+      }
+      return connection;
+    }
+
     auto bytes_from_variant(GVariant* value) -> std::vector<std::uint8_t> {
       gsize size = 0;
       const auto* data =
@@ -315,11 +334,7 @@ namespace signlang::signlang_manager {
     handler_ = std::move(handler);
 
     try {
-      auto error = GErrorGuard{};
-      connection_ = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error.error);
-      if (connection_ == nullptr) {
-        throw std::runtime_error(std::string{"Failed to connect to system D-Bus: "} + error.error->message);
-      }
+      connection_ = connect_system_bus();
 
       loop_ = g_main_loop_new(nullptr, FALSE);
       object_manager_node_ = parse_node(kObjectManagerXml);
@@ -327,6 +342,7 @@ namespace signlang::signlang_manager {
       characteristic_node_ = parse_node(kCharacteristicXml);
       advertisement_node_ = parse_node(kAdvertisementXml);
 
+      reset_adapter();
       register_objects();
       ensure_adapter_powered();
 
@@ -368,6 +384,9 @@ namespace signlang::signlang_manager {
       if (!started_.load()) {
         return;
       }
+      notifications_enabled_.store(false);
+      notify_owner_.clear();
+      handler_ = {};
       unregister_from_bluez();
       unregister_objects();
       if (loop_ != nullptr) {
@@ -439,43 +458,68 @@ namespace signlang::signlang_manager {
     object_registration_ids_.clear();
   }
 
+  auto BluetoothGattServer::read_adapter_powered() -> bool {
+    auto error = GErrorGuard{};
+    auto* result = g_dbus_connection_call_sync(
+        connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Get",
+        g_variant_new("(ss)", "org.bluez.Adapter1", "Powered"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 5000,
+        nullptr, &error.error);
+    if (result == nullptr) {
+      throw std::runtime_error(std::string{"Failed to read BlueZ adapter Powered property: "} + error.error->message);
+    }
+
+    GVariant* value = nullptr;
+    g_variant_get(result, "(@v)", &value);
+    auto* inner = g_variant_get_variant(value);
+    const auto powered = g_variant_get_boolean(inner);
+    g_variant_unref(inner);
+    g_variant_unref(value);
+    g_variant_unref(result);
+    return powered != FALSE;
+  }
+
+  void BluetoothGattServer::set_adapter_powered(bool powered) {
+    auto error = GErrorGuard{};
+    auto* result = g_dbus_connection_call_sync(
+        connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Set",
+        g_variant_new("(ssv)", "org.bluez.Adapter1", "Powered", g_variant_new_boolean(powered ? TRUE : FALSE)), nullptr,
+        G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &error.error);
+    if (result == nullptr) {
+      throw std::runtime_error(std::string{"Failed to set BlueZ adapter Powered property: "} + error.error->message);
+    }
+    g_variant_unref(result);
+  }
+
+  void BluetoothGattServer::reset_adapter() {
+    if (!read_adapter_powered()) {
+      return;
+    }
+
+    spdlog::info("Resetting BlueZ adapter {} before BLE advertisement registration", options_.adapter_path);
+    set_adapter_powered(false);
+    for (auto attempt = 0; attempt < 200 && read_adapter_powered(); ++attempt) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    set_adapter_powered(true);
+    for (auto attempt = 0; attempt < 200 && !read_adapter_powered(); ++attempt) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    if (!read_adapter_powered()) {
+      throw std::runtime_error("BlueZ adapter is still powered off after reset");
+    }
+  }
+
   void BluetoothGattServer::ensure_adapter_powered() {
-    auto read_powered = [&]() {
-      auto error = GErrorGuard{};
-      auto* result = g_dbus_connection_call_sync(
-          connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Get",
-          g_variant_new("(ss)", "org.bluez.Adapter1", "Powered"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 5000,
-          nullptr, &error.error);
-      if (result == nullptr) {
-        throw std::runtime_error(std::string{"Failed to read BlueZ adapter Powered property: "} + error.error->message);
-      }
-
-      GVariant* value = nullptr;
-      g_variant_get(result, "(@v)", &value);
-      auto* inner = g_variant_get_variant(value);
-      const auto powered = g_variant_get_boolean(inner);
-      g_variant_unref(inner);
-      g_variant_unref(value);
-      g_variant_unref(result);
-      return powered != FALSE;
-    };
-
-    if (read_powered()) {
+    if (read_adapter_powered()) {
       return;
     }
 
     spdlog::info("BlueZ adapter {} is powered off; enabling it", options_.adapter_path);
-    auto error = GErrorGuard{};
-    auto* result = g_dbus_connection_call_sync(
-        connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Set",
-        g_variant_new("(ssv)", "org.bluez.Adapter1", "Powered", g_variant_new_boolean(TRUE)), nullptr,
-        G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &error.error);
-    if (result == nullptr) {
-      throw std::runtime_error(std::string{"Failed to enable BlueZ adapter: "} + error.error->message);
-    }
-    g_variant_unref(result);
+    set_adapter_powered(true);
 
-    if (!read_powered()) {
+    if (!read_adapter_powered()) {
       throw std::runtime_error("BlueZ adapter is still powered off after enabling it");
     }
   }
@@ -493,6 +537,7 @@ namespace signlang::signlang_manager {
                                error.error->message);
     }
     g_variant_unref(result);
+    gatt_registered_ = true;
 
     auto adv_options = GVariantBuilder{};
     g_variant_builder_init(&adv_options, G_VARIANT_TYPE("a{sv}"));
@@ -504,6 +549,7 @@ namespace signlang::signlang_manager {
       throw std::runtime_error(std::string{"Failed to register BLE advertisement with BlueZ: "} + error.error->message);
     }
     g_variant_unref(result);
+    advertisement_registered_ = true;
     spdlog::info("BLE GATT service registered on {}", options_.adapter_path);
   }
 
@@ -512,7 +558,7 @@ namespace signlang::signlang_manager {
       return;
     }
 
-    {
+    if (advertisement_registered_) {
       auto error = GErrorGuard{};
       auto* result = g_dbus_connection_call_sync(connection_, kBluezBusName, options_.adapter_path.c_str(),
                                                  "org.bluez.LEAdvertisingManager1", "UnregisterAdvertisement",
@@ -520,23 +566,31 @@ namespace signlang::signlang_manager {
                                                  G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error.error);
       if (result != nullptr) {
         g_variant_unref(result);
+      } else if (error.error != nullptr) {
+        spdlog::warn("Failed to unregister BLE advertisement: {}", error.error->message);
       }
+      advertisement_registered_ = false;
     }
 
-    {
+    if (gatt_registered_) {
       auto error = GErrorGuard{};
       auto* result = g_dbus_connection_call_sync(
           connection_, kBluezBusName, options_.adapter_path.c_str(), "org.bluez.GattManager1", "UnregisterApplication",
           g_variant_new("(o)", kAppPath), nullptr, G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error.error);
       if (result != nullptr) {
         g_variant_unref(result);
+      } else if (error.error != nullptr) {
+        spdlog::warn("Failed to unregister BLE GATT application: {}", error.error->message);
       }
+      gatt_registered_ = false;
     }
   }
 
   void BluetoothGattServer::run_loop() { g_main_loop_run(loop_); }
 
   void BluetoothGattServer::release_local_resources() {
+    close_connection();
+
     if (advertisement_node_ != nullptr) {
       g_dbus_node_info_unref(advertisement_node_);
       advertisement_node_ = nullptr;
@@ -560,6 +614,17 @@ namespace signlang::signlang_manager {
     if (connection_ != nullptr) {
       g_object_unref(connection_);
       connection_ = nullptr;
+    }
+  }
+
+  void BluetoothGattServer::close_connection() {
+    if (connection_ == nullptr || g_dbus_connection_is_closed(connection_)) {
+      return;
+    }
+
+    auto error = GErrorGuard{};
+    if (!g_dbus_connection_close_sync(connection_, nullptr, &error.error) && error.error != nullptr) {
+      spdlog::warn("Failed to close BLE D-Bus connection cleanly: {}", error.error->message);
     }
   }
 

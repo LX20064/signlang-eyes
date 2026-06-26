@@ -47,12 +47,16 @@ namespace signlang::signlang_manager {
   private:
     void register_objects();
     void unregister_objects();
+    auto read_adapter_powered() -> bool;
+    void set_adapter_powered(bool powered);
+    void reset_adapter();
     void ensure_adapter_powered();
     void register_with_bluez();
     void unregister_from_bluez();
     void run_loop();
     void emit_tx_value_changed(const std::vector<std::uint8_t>& value);
     void release_local_resources();
+    void close_connection();
 
     BluetoothGattOptions options_;
     GDBusConnection* connection_{nullptr};
@@ -63,6 +67,8 @@ namespace signlang::signlang_manager {
     GDBusNodeInfo* advertisement_node_{nullptr};
     std::vector<unsigned int> object_registration_ids_;
     unsigned int name_owner_watch_id_{0};
+    bool gatt_registered_{false};
+    bool advertisement_registered_{false};
     std::thread loop_thread_;
     PacketHandler handler_;
     mutable std::mutex mutex_;
