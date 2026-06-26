@@ -101,11 +101,11 @@ Default state is `Normal`. ASR and sign language modules remain disabled in this
 Requires a cross-compilation toolchain targeting aarch64. Example using Buildroot toolchain:
 
 ```bash
-mkdir build && cd build
-cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/aarch64-buildroot.cmake \
-      -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-make install DESTDIR=../install
+cmake -S . -B build-aarch64 \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-buildroot.cmake \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build build-aarch64 -j$(nproc)
+cmake --install build-aarch64 --prefix install
 ```
 
 ### Native build (on aarch64 device)
@@ -115,6 +115,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 cmake --install build --prefix install
 ```
+
+The installed binaries resolve relative runtime paths from the installation root, not from the shell's current working
+directory. `launcher` is installed at the root, and module executables installed under `bin/` automatically use the
+parent directory as their runtime root. Defaults such as `conf/conf.toml`, `models/...`, and `log/...` therefore work
+when launching from any directory.
 
 ### Installation Directory Layout
 
@@ -136,6 +141,7 @@ install/
 │   ├── librknnrt.so
 │   ├── libspdlog.so
 │   └── librga.so
+├── log/              # Runtime logs, created on first launcher run
 ├── conf/             # Configuration files
 │   ├── conf.toml
 │   └── prototypes.sqlite
@@ -195,19 +201,20 @@ stream_fps = 30
 
 IPC service names are **hardcoded** in the launcher and cannot be configured via TOML.
 
+Relative paths in the TOML are resolved from the installation root when launched through `launcher`.
+
 ## Running
 
 ### Launch all modules
 
 ```bash
-cd install
-./launcher --config conf/conf.toml
+install/launcher --config conf/conf.toml
 ```
 
 Or use default configuration:
 
 ```bash
-./launcher
+install/launcher
 ```
 
 The launcher spawns all modules in dependency order, monitors their health, and performs coordinated shutdown on SIGINT/SIGTERM or child failure.
@@ -216,33 +223,61 @@ The launcher spawns all modules in dependency order, monitors their health, and 
 
 ```bash
 # State machine
-./bin/state_machine
+install/bin/state_machine \
+    --state-event-service app_state_event \
+    --state-blackboard-service app_state_blackboard \
+    --state-control-service app_state_control
 
 # Audio capture
-./bin/audio_frontend --device hw:2,0 --capture-rate 16000
+install/bin/audio_frontend \
+    --device hw:2,0 \
+    --service audio_capture \
+    --capture-rate 16000
 
 # Video capture
-./bin/video_frontend --device /dev/video21 --width 640 --height 480
+install/bin/video_frontend \
+    --device /dev/video21 \
+    --service video_capture \
+    --output-width 640 \
+    --output-height 480
 
 # Speech recognition
-./bin/speech_asr --language zh --npu-core 1
+install/bin/speech_asr \
+    --input-service audio_capture \
+    --output-service speech_asr_result \
+    --language zh \
+    --npu-core 1
 
 # Environmental sound detection
-./bin/env_sound_det --npu-core 0 --score-threshold 0.3
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --npu-core 0 \
+    --score-threshold 0.3
 
 # Hand pose detection
-./bin/handpose_det --npu-core 2 --confidence 0.5
+install/bin/handpose_det \
+    --input-service video_capture \
+    --output-service handpose_result \
+    --npu-core 2 \
+    --confidence 0.5
 
 # BLE sign language manager
-./bin/signlang_manager --input-service handpose_result --signlang-control-service signlang_prototype_control
+install/bin/signlang_manager \
+    --input-service handpose_result \
+    --signlang-control-service signlang_prototype_control
 
 # Sign language recognition
-./bin/signlang_det --npu-core 0 --sequence-length 30
+install/bin/signlang_det \
+    --input-service handpose_result \
+    --output-service signlang_result \
+    --npu-core 0 \
+    --sequence-length 30
 ```
 
 ## Logging
 
-Logs are automatically saved to the `logs/` directory:
+When launched through `launcher`, logs are automatically saved to the installation root's `log/` directory:
 - Single file size: 1MB (configurable)
 - Retained file count: 100 (configurable)
 - Format: `[timestamp] [level] [thread] message`
@@ -285,9 +320,10 @@ Detailed documentation for each module:
 Inter-module communication via iceoryx2 services (hardcoded names):
 - `audio_capture`: Audio frame data stream (PCM 16-bit, publish-subscribe)
 - `video_capture`: Video frame data stream (RGB24, publish-subscribe with user header)
-- `handpose_data`: Hand keypoint data stream (21 landmarks for one or two hands, publish-subscribe with user header)
+- `handpose_result`: Hand keypoint data stream (21 landmarks for one or two hands, publish-subscribe with user header)
 - `speech_asr_result`: Speech recognition transcription results (publish-subscribe)
 - `signlang_result`: Sign language recognition results (publish-subscribe)
+- `signlang_prototype_control`: Prototype reload/status control between signlang_manager and signlang_det (request-response)
 - `app_state_event`: State change event notifications (event notifier)
 - `app_state_blackboard`: Current application state storage (blackboard, single-entry)
 - `app_state_control`: State control requests (request-response)

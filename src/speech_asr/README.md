@@ -12,6 +12,10 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 ### IPC (Required)
 
 | Parameter | Description |
@@ -140,7 +144,7 @@ WhisperModel
 ### Basic Usage (English)
 
 ```bash
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en
@@ -149,7 +153,7 @@ WhisperModel
 ### Chinese Recognition
 
 ```bash
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language zh \
@@ -160,7 +164,7 @@ WhisperModel
 ### With State Control
 
 ```bash
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --state-event-service app_state_event \
@@ -173,7 +177,7 @@ WhisperModel
 
 ```bash
 # Use NPU cores 0 and 1
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en \
@@ -184,7 +188,7 @@ WhisperModel
 
 ```bash
 # Encoder on core 0, decoder on core 1
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en \

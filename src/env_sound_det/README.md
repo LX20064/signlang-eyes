@@ -12,6 +12,10 @@ The **env_sound_det** module performs real-time environmental sound classificati
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 ### IPC (Required)
 
 | Parameter | Description |
@@ -143,7 +147,7 @@ YamnetModel (RKNN NPU)
 ### Basic Usage
 
 ```bash
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control
 ```
@@ -152,7 +156,7 @@ YamnetModel (RKNN NPU)
 
 ```bash
 # More sensitive detection (lower threshold)
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --score-threshold 0.2
@@ -162,7 +166,7 @@ YamnetModel (RKNN NPU)
 
 ```bash
 # 5-second detection window
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --window-ms 5000 \
@@ -172,7 +176,7 @@ YamnetModel (RKNN NPU)
 ### Specific NPU Core
 
 ```bash
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --npu-core 0 \
@@ -261,14 +265,21 @@ iox2-list
 
 Increase the score threshold:
 ```bash
-./env_sound_det --score-threshold 0.4
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --score-threshold 0.4
 ```
 
 ### Missed Detections
 
 Lower the score threshold or increase window size:
 ```bash
-./env_sound_det --score-threshold 0.2 --window-ms 5000
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --score-threshold 0.2 \
+    --window-ms 5000
 ```
 
 ### RKNN Initialization Failed

@@ -77,6 +77,10 @@ During commit, the manager:
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--input-service` | required | handpose iceoryx2 service |
@@ -108,7 +112,7 @@ bluetoothctl advertise on
 Then run the installed stack and inspect logs:
 
 ```bash
-./launcher --config conf/conf.toml
+install/launcher --config conf/conf.toml
 tail -f log/*signlang_manager*.log
 ```
 

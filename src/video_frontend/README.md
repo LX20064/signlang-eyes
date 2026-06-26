@@ -11,6 +11,10 @@ The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) c
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--device` / `-d` | *(required)* | V4L2 camera device name (e.g., `/dev/video0`) |
@@ -114,7 +118,7 @@ VideoProcessor
 
 ```bash
 # Capture from /dev/video0 at default resolution and 30 fps
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture
 ```
@@ -123,7 +127,7 @@ VideoProcessor
 
 ```bash
 # Capture 1080p, publish 640x480
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture \
     --capture-width 1920 \
@@ -137,7 +141,7 @@ VideoProcessor
 
 ```bash
 # 60 fps capture
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture \
     --fps 60
@@ -157,7 +161,7 @@ v4l2-ctl -d /dev/video0 --list-formats-ext
 
 | File | Description |
 |------|-------------|
-| `main.cpp` | Entry point; signal handling (SIGINT/SIGTERM), main capture loop |
+| `main.cpp` | Entry point; main capture loop |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `v4l2_capture_device.{cpp,hpp}` | V4L2 device enumeration, format negotiation, frame capture |
 | `video_format.hpp` | `VideoFormat`, `VideoFormatRequest` structs |

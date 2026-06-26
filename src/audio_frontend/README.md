@@ -11,6 +11,10 @@ The **audio_frontend** module captures raw PCM audio from an ALSA audio device a
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--device` / `-d` | *(required)* | ALSA audio device name (e.g., `hw:0,0`, `default`) |
@@ -85,7 +89,7 @@ SoundSourceLocalization    AudioPublisher
 
 ```bash
 # Capture from default mic, publish at 16 kHz mono
-./audio_frontend \
+install/bin/audio_frontend \
     --device hw:0,0 \
     --service audio_capture
 ```
@@ -94,7 +98,7 @@ SoundSourceLocalization    AudioPublisher
 
 ```bash
 # Stereo capture, mono publish with resampling
-./audio_frontend \
+install/bin/audio_frontend \
     --device hw:0,0 \
     --service audio_capture \
     --capture-rate 48000 \
@@ -108,7 +112,7 @@ SoundSourceLocalization    AudioPublisher
 
 ```bash
 # Enable TDOA-based source localization
-./audio_frontend \
+install/bin/audio_frontend \
     --device hw:0,0 \
     --service audio_capture \
     --capture-rate 16000 \
@@ -130,7 +134,7 @@ arecord -l
 
 | File | Description |
 |------|-------------|
-| `main.cpp` | Entry point; signal handling (SIGINT/SIGTERM), main loop |
+| `main.cpp` | Entry point; main loop |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `alsa_capture_device.{cpp,hpp}` | ALSA PCM device capture wrapper |
 | `audio_format.hpp` | `AudioFormat`, `AudioFormatRequest` structs |

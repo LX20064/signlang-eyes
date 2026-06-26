@@ -12,6 +12,10 @@ The **signlang_det** module performs real-time dual-hand sign language recogniti
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 ### IPC (Required)
 
 | Parameter | Description |
@@ -194,7 +198,7 @@ FeatureExtractor
 ### Basic Usage
 
 ```bash
-./signlang_det \
+install/bin/signlang_det \
     --input-service handpose_result \
     --output-service signlang_result
 ```
@@ -202,7 +206,7 @@ FeatureExtractor
 ### With State Control
 
 ```bash
-./signlang_det \
+install/bin/signlang_det \
     --input-service handpose_result \
     --output-service signlang_result \
     --state-event-service app_state_event \
@@ -213,7 +217,7 @@ FeatureExtractor
 
 ```bash
 # Longer window, stricter confidence
-./signlang_det \
+install/bin/signlang_det \
     --input-service handpose_result \
     --output-service signlang_result \
     --sequence-length 45 \
@@ -226,7 +230,7 @@ FeatureExtractor
 
 ```bash
 # Include velocity in recognition (0.3 = 30% motion weight)
-./signlang_det \
+install/bin/signlang_det \
     --input-service handpose_result \
     --output-service signlang_result \
     --motion-weight 0.3 \
@@ -236,7 +240,7 @@ FeatureExtractor
 ### Specific NPU Core
 
 ```bash
-./signlang_det \
+install/bin/signlang_det \
     --input-service handpose_result \
     --output-service signlang_result \
     --npu-core 0

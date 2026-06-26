@@ -40,6 +40,10 @@ The module publishes two hand slots by default. `--single-hand` switches recogni
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 | Parameter                | Default                                         | Range                    | Description                                          |
 |--------------------------|-------------------------------------------------|--------------------------|------------------------------------------------------|
 | `--input-service`, `-i`  | required                                        | –                        | Upstream video iceoryx2 service                      |
@@ -106,7 +110,7 @@ Coordinates are in source image pixel space. Landmark `z` is scaled from the 224
 ## Usage
 
 ```bash
-./handpose_det \
+install/bin/handpose_det \
   --input-service video_capture \
   --output-service handpose_result \
   --single-hand=false \
@@ -116,7 +120,7 @@ Coordinates are in source image pixel space. Landmark `z` is scaled from the 224
 With state gating (only process frames when in sign language mode):
 
 ```bash
-./handpose_det \
+install/bin/handpose_det \
   --input-service video_capture \
   --output-service handpose_result \
   --state-event-service app_state_event \

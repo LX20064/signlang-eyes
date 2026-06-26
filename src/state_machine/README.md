@@ -25,6 +25,10 @@ The **state_machine** module is the central application state controller for the
 
 ## Command-Line Parameters
 
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--state-event-service` | *(required)* | iceoryx2 event service name for app state change notifications |
@@ -124,7 +128,7 @@ StateController
 
 ```bash
 # Start the state machine (typically first in the startup sequence)
-./state_machine \
+install/bin/state_machine \
     --state-event-service app_state_event \
     --state-blackboard-service app_state_blackboard \
     --state-control-service app_state_control
@@ -136,30 +140,35 @@ The state_machine should be started before other modules that depend on it:
 
 ```bash
 # 1. Start state machine
-./state_machine \
+install/bin/state_machine \
     --state-event-service app_state_event \
     --state-blackboard-service app_state_blackboard \
     --state-control-service app_state_control &
 
 # 2. Start audio/video frontends (no state dependency)
-./audio_frontend --device hw:0,0 --service audio_capture &
-./video_frontend --device /dev/video0 --service video_capture &
+install/bin/audio_frontend --device hw:0,0 --service audio_capture &
+install/bin/video_frontend --device /dev/video0 --service video_capture &
 
 # 3. Start inference modules (each references the same state services)
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture --output-service speech_asr_result \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control &
 
-./handpose_det \
+install/bin/handpose_det \
     --input-service video_capture --output-service handpose_result \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 
-./signlang_det \
+install/bin/signlang_manager \
+    --input-service handpose_result \
+    --signlang-control-service signlang_prototype_control &
+
+install/bin/signlang_det \
     --input-service handpose_result --output-service signlang_result \
+    --prototype-control-service signlang_prototype_control \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 ```
 
@@ -167,7 +176,7 @@ The state_machine should be started before other modules that depend on it:
 
 | File | Description |
 |------|-------------|
-| `main.cpp` | Entry point; signal handling, main control loop (100ms cycle) |
+| `main.cpp` | Entry point; main control loop (100ms cycle) |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `app_state.{cpp,hpp}` | `AppState` enum (5 states), `AppStateKey` struct, helper functions |
 | `state_control.{cpp,hpp}` | `StateController` class: state machine logic, base/special state transitions, timeout handling |
@@ -302,7 +311,7 @@ iox2-list
 Check state_machine logs:
 ```bash
 # Should show state transition messages
-tail -f logs/state_machine.log
+tail -f log/state_machine.log
 ```
 
 ### Special State Not Expiring

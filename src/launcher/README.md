@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **launcher** module is the system entry point that reads per-module configuration from a TOML file and spawns all 7 sub-modules as child processes. It monitors child health via `waitpid()` and performs coordinated shutdown of the entire system on SIGINT/SIGTERM or if any module exits unexpectedly.
+The **launcher** module is the system entry point that reads per-module configuration from a TOML file and spawns all 8 sub-modules as child processes. It monitors child health via `waitpid()` and performs coordinated shutdown of the entire system on SIGINT/SIGTERM or if any module exits unexpectedly.
 
 - **Executable**: `launcher` (installed at root level, not under `bin/`)
 - **Input**: TOML configuration file (`conf/conf.toml` by default)
@@ -14,6 +14,10 @@ The **launcher** module is the system entry point that reads per-module configur
 |-----------|---------|-------------|
 | `--config` / `-c` | `conf/conf.toml` | Path to the TOML configuration file |
 | `--help` / `-h` | — | Print usage |
+
+The launcher changes its working directory to the installation root before reading default paths, starting children, and
+creating logs. If `--config` is a relative path, it is resolved from the caller's original working directory when that
+file exists; otherwise it is resolved from the installation root.
 
 ## Configuration File
 
@@ -30,6 +34,7 @@ See `conf/conf.toml` for the default configuration with all available keys docum
 - `[env_sound_det]` — YAMNet environmental sound detection parameters (npu_core, score_threshold, etc.)
 - `[handpose_det]` — MediaPipe hand pose detection parameters (npu_core, confidence, single_hand, etc.)
 - `[signlang_det]` — Sign language recognition parameters (npu_core, sequence_length, confidence_threshold, etc.)
+- `[signlang_manager]` — BLE GATT streaming and prototype database management parameters
 
 ## Technical Details
 
@@ -46,12 +51,13 @@ signlang_result        ← signlang_det
 app_state_event        ↔ state_machine → speech_asr, handpose_det, signlang_det
 app_state_blackboard   ↔ state_machine → speech_asr, handpose_det, signlang_det
 app_state_control      ↔ state_machine ← env_sound_det
+signlang_prototype_control ↔ signlang_manager → signlang_det
 audio_source_localization ↔ audio_frontend (sound source localization blackboard)
 ```
 
 ### Startup Order
 
-Modules are started sequentially with a brief delay between each to ensure dependencies are ready:
+Modules are started sequentially in this order:
 
 1. `state_machine` — global state controller (must start first)
 2. `audio_frontend` — audio capture
@@ -59,7 +65,8 @@ Modules are started sequentially with a brief delay between each to ensure depen
 4. `speech_asr` — speech recognition
 5. `env_sound_det` — environmental sound detection
 6. `handpose_det` — hand keypoint detection
-7. `signlang_det` — sign language recognition
+7. `signlang_manager` — BLE streaming and prototype database management
+8. `signlang_det` — sign language recognition
 
 ### Process Lifecycle
 
@@ -74,7 +81,7 @@ Modules are started sequentially with a brief delay between each to ensure depen
 
 ### TOML Parsing
 
-- Each module section is read independently; missing sections are silently skipped (the module runs with its own defaults)
+- Each module section is read independently; missing sections are allowed and the module still starts with its own defaults
 - String, integer, floating-point, and boolean values are supported via `toml++` accessors
 - Numeric keys use underscore naming (`capture_rate`, `window_ms`) and are mapped to each module's CLI flags (`--capture-rate`, `--window-ms`)
 - Array and table values are not currently supported
@@ -120,6 +127,7 @@ launcher
     │   ├─► speech_asr
     │   ├─► env_sound_det
     │   ├─► handpose_det
+    │   ├─► signlang_manager
     │   └─► signlang_det
     │
     └─► Monitor Loop (500ms)
@@ -147,21 +155,23 @@ install/
 │   ├── speech_asr
 │   ├── env_sound_det
 │   ├── handpose_det
+│   ├── signlang_manager
 │   └── signlang_det
 ├── conf/
-│   └── conf.toml
+│   ├── conf.toml
+│   └── prototypes.sqlite
 ├── lib/
 │   ├── libiceoryx2_cxx.so
 │   ├── libiceoryx2_ffi_c.so
 │   ├── librknnrt.so
 │   ├── libspdlog.so
 │   └── librga.so
-├── logs/                        ← auto-created on first run
+├── log/                         ← auto-created on first run
 └── models/
     ├── whisper/
     ├── yamnet/
     ├── mediapipe/
-    └── signlang/
+    └── bilstm/
 ```
 
 ## Usage Examples
@@ -170,14 +180,14 @@ install/
 
 ```bash
 # Start all modules with default configuration
-./launcher
+/opt/signlang-eyes/launcher
 ```
 
 ### Custom Configuration
 
 ```bash
 # Use a custom configuration file
-./launcher --config /etc/signlang/config.toml
+/opt/signlang-eyes/launcher --config /etc/signlang/config.toml
 ```
 
 ### Check Module Status
@@ -232,6 +242,11 @@ confidence = 0.5           # Detection confidence
 npu_core = "0"             # NPU core 0
 sequence_length = 30       # 30-frame window
 confidence_threshold = 0.6 # Recognition confidence
+
+[signlang_manager]
+npu_core = "0"             # NPU core 0
+bluetooth_name = "SignLang Eyes"
+stream_fps = 30
 ```
 
 ## Monitoring and Control
@@ -248,9 +263,8 @@ pkill -SIGTERM launcher
 
 The launcher will:
 1. Send `SIGTERM` to all child processes
-2. Wait for all children to exit (max 5 seconds)
-3. Send `SIGKILL` to any remaining children
-4. Exit cleanly
+2. Wait for all children to exit
+3. Exit cleanly
 
 ### Automatic Restart on Child Failure
 
@@ -285,7 +299,7 @@ WantedBy=multi-user.target
 - **Memory**: ~2MB launcher process only (excludes child processes)
 - **Child isolation**: Each module runs in separate process with independent address space
 - **Shutdown time**: <2s (SIGTERM propagation + graceful child exit)
-- **Process tree depth**: 2 levels (launcher → 7 child modules)
+- **Process tree depth**: 2 levels (launcher → 8 child modules)
 
 ## Troubleshooting
 
@@ -294,7 +308,7 @@ WantedBy=multi-user.target
 Check the launcher logs for exec failures:
 ```bash
 # Launcher logs to stdout/stderr by default
-./launcher 2>&1 | tee launcher.log
+/opt/signlang-eyes/launcher 2>&1 | tee launcher.log
 ```
 
 Common causes:
@@ -314,8 +328,8 @@ python3 -c "import tomli; tomli.load(open('conf/conf.toml', 'rb'))"
 
 Check individual module logs:
 ```bash
-# Module logs are in logs/ directory
-tail -f logs/*.log
+# Module logs are in log/ directory
+tail -f log/*.log
 ```
 
 ### IPC Service Conflicts
