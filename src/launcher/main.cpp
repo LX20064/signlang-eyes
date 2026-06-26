@@ -331,6 +331,22 @@ namespace {
     }
   }
 
+  auto resolve_config_path(const std::string& config_path, const std::filesystem::path& invocation_cwd)
+      -> std::filesystem::path {
+    const auto path = std::filesystem::path{config_path};
+    if (path.is_absolute()) {
+      return path;
+    }
+
+    const auto invocation_path = invocation_cwd / path;
+    std::error_code error;
+    if (std::filesystem::exists(invocation_path, error) && !error) {
+      return invocation_path;
+    }
+
+    return path;
+  }
+
 } // namespace
 
 static auto build_state_machine_args(const toml::table& /* cfg */) -> std::vector<std::string> {
@@ -531,15 +547,18 @@ auto main(int argc, char** argv) -> int {
     }
 
     const auto& options = std::get<ProgramOptions>(parse_result);
+    const auto invocation_cwd = std::filesystem::current_path();
+    signlang::runtime::enter_runtime_root();
+    const auto config_path = resolve_config_path(options.config_path, invocation_cwd);
 
     toml::table config;
     try {
-      config = toml::parse_file(options.config_path);
+      config = toml::parse_file(config_path.string());
     } catch (const toml::parse_error& err) {
-      spdlog::error("[launcher] failed to parse config file '{}': {}", options.config_path, err.what());
+      spdlog::error("[launcher] failed to parse config file '{}': {}", config_path.string(), err.what());
       return 1;
     } catch (const std::runtime_error& err) {
-      spdlog::error("[launcher] failed to open config file '{}': {}", options.config_path, err.what());
+      spdlog::error("[launcher] failed to open config file '{}': {}", config_path.string(), err.what());
       return 1;
     }
 
@@ -553,7 +572,7 @@ auto main(int argc, char** argv) -> int {
         logging_config.retain_files);
     cleanup_old_log_files(logging_config.retain_files);
 
-    spdlog::info("[launcher] loaded config: {}", options.config_path);
+    spdlog::info("[launcher] loaded config: {}", config_path.string());
 
     // Warn about any IPC service keys in the TOML
     warn_ipc_keys_in_config(config);
