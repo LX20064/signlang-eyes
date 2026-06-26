@@ -52,6 +52,7 @@ namespace signlang::signlang_manager {
     void unregister_from_bluez();
     void run_loop();
     void emit_tx_value_changed(const std::vector<std::uint8_t>& value);
+    void release_local_resources();
 
     BluetoothGattOptions options_;
     GDBusConnection* connection_{nullptr};

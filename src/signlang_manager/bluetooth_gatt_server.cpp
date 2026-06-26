@@ -3,6 +3,7 @@
 #include "spdlog/spdlog.h"
 
 #include <algorithm>
+#include <chrono>
 #include <gio/gio.h>
 #include <glib.h>
 #include <stdexcept>
@@ -306,30 +307,58 @@ namespace signlang::signlang_manager {
   auto BluetoothGattServer::local_name() const -> const std::string& { return options_.local_name; }
 
   void BluetoothGattServer::start(PacketHandler handler) {
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_);
     if (started_.load()) {
       return;
     }
     handler_ = std::move(handler);
 
-    auto error = GErrorGuard{};
-    connection_ = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error.error);
-    if (connection_ == nullptr) {
-      throw std::runtime_error(std::string{"Failed to connect to system D-Bus: "} + error.error->message);
+    try {
+      auto error = GErrorGuard{};
+      connection_ = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error.error);
+      if (connection_ == nullptr) {
+        throw std::runtime_error(std::string{"Failed to connect to system D-Bus: "} + error.error->message);
+      }
+
+      loop_ = g_main_loop_new(nullptr, FALSE);
+      object_manager_node_ = parse_node(kObjectManagerXml);
+      service_node_ = parse_node(kServiceXml);
+      characteristic_node_ = parse_node(kCharacteristicXml);
+      advertisement_node_ = parse_node(kAdvertisementXml);
+
+      register_objects();
+      ensure_adapter_powered();
+
+      started_.store(true);
+      loop_thread_ = std::thread{[this]() { run_loop(); }};
+      for (auto attempt = 0; attempt < 1000 && !g_main_loop_is_running(loop_); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      }
+      if (!g_main_loop_is_running(loop_)) {
+        throw std::runtime_error("Timed out waiting for BLE D-Bus main loop to start");
+      }
+
+      register_with_bluez();
+    } catch (...) {
+      unregister_from_bluez();
+      unregister_objects();
+      if (loop_ != nullptr) {
+        g_main_loop_quit(loop_);
+      }
+      started_.store(false);
+      notify_owner_.clear();
+      notifications_enabled_.store(false);
+      handler_ = {};
+
+      lock.unlock();
+      if (loop_thread_.joinable()) {
+        loop_thread_.join();
+      }
+      lock.lock();
+
+      release_local_resources();
+      throw;
     }
-
-    loop_ = g_main_loop_new(nullptr, FALSE);
-    object_manager_node_ = parse_node(kObjectManagerXml);
-    service_node_ = parse_node(kServiceXml);
-    characteristic_node_ = parse_node(kCharacteristicXml);
-    advertisement_node_ = parse_node(kAdvertisementXml);
-
-    register_objects();
-    ensure_adapter_powered();
-    register_with_bluez();
-
-    started_.store(true);
-    loop_thread_ = std::thread{[this]() { run_loop(); }};
   }
 
   void BluetoothGattServer::stop() {
@@ -350,30 +379,7 @@ namespace signlang::signlang_manager {
       loop_thread_.join();
     }
 
-    if (advertisement_node_ != nullptr) {
-      g_dbus_node_info_unref(advertisement_node_);
-      advertisement_node_ = nullptr;
-    }
-    if (characteristic_node_ != nullptr) {
-      g_dbus_node_info_unref(characteristic_node_);
-      characteristic_node_ = nullptr;
-    }
-    if (service_node_ != nullptr) {
-      g_dbus_node_info_unref(service_node_);
-      service_node_ = nullptr;
-    }
-    if (object_manager_node_ != nullptr) {
-      g_dbus_node_info_unref(object_manager_node_);
-      object_manager_node_ = nullptr;
-    }
-    if (loop_ != nullptr) {
-      g_main_loop_unref(loop_);
-      loop_ = nullptr;
-    }
-    if (connection_ != nullptr) {
-      g_object_unref(connection_);
-      connection_ = nullptr;
-    }
+    release_local_resources();
   }
 
   void BluetoothGattServer::register_objects() {
@@ -524,6 +530,33 @@ namespace signlang::signlang_manager {
   }
 
   void BluetoothGattServer::run_loop() { g_main_loop_run(loop_); }
+
+  void BluetoothGattServer::release_local_resources() {
+    if (advertisement_node_ != nullptr) {
+      g_dbus_node_info_unref(advertisement_node_);
+      advertisement_node_ = nullptr;
+    }
+    if (characteristic_node_ != nullptr) {
+      g_dbus_node_info_unref(characteristic_node_);
+      characteristic_node_ = nullptr;
+    }
+    if (service_node_ != nullptr) {
+      g_dbus_node_info_unref(service_node_);
+      service_node_ = nullptr;
+    }
+    if (object_manager_node_ != nullptr) {
+      g_dbus_node_info_unref(object_manager_node_);
+      object_manager_node_ = nullptr;
+    }
+    if (loop_ != nullptr) {
+      g_main_loop_unref(loop_);
+      loop_ = nullptr;
+    }
+    if (connection_ != nullptr) {
+      g_object_unref(connection_);
+      connection_ = nullptr;
+    }
+  }
 
   auto BluetoothGattServer::request_start_notify(const char* sender) -> bool {
     const auto owner = std::string{sender == nullptr ? "" : sender};
