@@ -68,6 +68,7 @@ namespace signlang::signlang_manager {
           <property name="Type" type="s" access="read"/>
           <property name="ServiceUUIDs" type="as" access="read"/>
           <property name="LocalName" type="s" access="read"/>
+          <property name="Discoverable" type="b" access="read"/>
         </interface>
       </node>
     )XML";
@@ -215,6 +216,9 @@ namespace signlang::signlang_manager {
       if (g_strcmp0(property_name, "LocalName") == 0) {
         return g_variant_new_string(server == nullptr ? "SignLang Eyes" : server->local_name().c_str());
       }
+      if (g_strcmp0(property_name, "Discoverable") == 0) {
+        return g_variant_new_boolean(TRUE);
+      }
       return nullptr;
     }
 
@@ -321,6 +325,7 @@ namespace signlang::signlang_manager {
     advertisement_node_ = parse_node(kAdvertisementXml);
 
     register_objects();
+    ensure_adapter_powered();
     register_with_bluez();
 
     started_.store(true);
@@ -420,6 +425,47 @@ namespace signlang::signlang_manager {
       }
     }
     object_registration_ids_.clear();
+  }
+
+  void BluetoothGattServer::ensure_adapter_powered() {
+    auto read_powered = [&]() {
+      auto error = GErrorGuard{};
+      auto* result = g_dbus_connection_call_sync(
+          connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Get",
+          g_variant_new("(ss)", "org.bluez.Adapter1", "Powered"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 5000,
+          nullptr, &error.error);
+      if (result == nullptr) {
+        throw std::runtime_error(std::string{"Failed to read BlueZ adapter Powered property: "} + error.error->message);
+      }
+
+      GVariant* value = nullptr;
+      g_variant_get(result, "(@v)", &value);
+      auto* inner = g_variant_get_variant(value);
+      const auto powered = g_variant_get_boolean(inner);
+      g_variant_unref(inner);
+      g_variant_unref(value);
+      g_variant_unref(result);
+      return powered != FALSE;
+    };
+
+    if (read_powered()) {
+      return;
+    }
+
+    spdlog::info("BlueZ adapter {} is powered off; enabling it", options_.adapter_path);
+    auto error = GErrorGuard{};
+    auto* result = g_dbus_connection_call_sync(
+        connection_, kBluezBusName, options_.adapter_path.c_str(), "org.freedesktop.DBus.Properties", "Set",
+        g_variant_new("(ssv)", "org.bluez.Adapter1", "Powered", g_variant_new_boolean(TRUE)), nullptr,
+        G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &error.error);
+    if (result == nullptr) {
+      throw std::runtime_error(std::string{"Failed to enable BlueZ adapter: "} + error.error->message);
+    }
+    g_variant_unref(result);
+
+    if (!read_powered()) {
+      throw std::runtime_error("BlueZ adapter is still powered off after enabling it");
+    }
   }
 
   void BluetoothGattServer::register_with_bluez() {

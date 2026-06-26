@@ -47,6 +47,7 @@ namespace signlang::signlang_manager {
   private:
     void register_objects();
     void unregister_objects();
+    void ensure_adapter_powered();
     void register_with_bluez();
     void unregister_from_bluez();
     void run_loop();

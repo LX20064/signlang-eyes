@@ -12,6 +12,8 @@
 
 The module initializes `prototypes.sqlite` automatically. If the file is empty, missing required tables, has a wrong
 schema version, or has an embedding dimension mismatch, it recreates a valid empty database with no gestures.
+At startup it also verifies the configured BlueZ adapter, powers it on if needed, and exits with an error if GATT
+application or LE advertisement registration fails.
 
 ## BLE Service
 
