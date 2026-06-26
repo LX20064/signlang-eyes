@@ -40,6 +40,8 @@ namespace signlang::signlang_det {
 
     options.add_options()("i,input-service", "Input handpose iceoryx2 service name", cxxopts::value<std::string>())(
         "o,output-service", "Output signlang result iceoryx2 service name", cxxopts::value<std::string>())(
+        "prototype-control-service", "iceoryx2 request-response service for prototype reload control",
+        cxxopts::value<std::string>())(
         "state-event-service", "iceoryx2 event service name for global app state change notifications",
         cxxopts::value<std::string>())("state-blackboard-service",
                                        "iceoryx2 blackboard service name for global app state storage",
@@ -130,6 +132,9 @@ namespace signlang::signlang_det {
     return ProgramOptions{
         .input_service_name = parsed_options["input-service"].as<std::string>(),
         .output_service_name = parsed_options["output-service"].as<std::string>(),
+        .prototype_control_service_name = parsed_options.count("prototype-control-service") != 0
+            ? std::optional<std::string>{parsed_options["prototype-control-service"].as<std::string>()}
+            : std::nullopt,
         .state_event_service_name = has_state_event_service
             ? std::optional<std::string>{parsed_options["state-event-service"].as<std::string>()}
             : std::nullopt,

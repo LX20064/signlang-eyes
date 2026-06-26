@@ -36,6 +36,12 @@ Modular architecture using iceoryx2 zero-copy IPC for high-performance inter-pro
 │  signlang_det    │─────────────┘
 │  (DTW matching)  │
 └──────────────────┘
+        ▲
+        │
+┌──────────────────┐
+│ signlang_manager │
+│ (BLE + DB mgmt)  │
+└──────────────────┘
 ```
 
 ### Core Modules
@@ -46,6 +52,7 @@ Modular architecture using iceoryx2 zero-copy IPC for high-performance inter-pro
 - **env_sound_det**: YAMNet (MobileNetV1) environmental sound classification with threshold-based dangerous sound alerts
 - **handpose_det**: MediaPipe dual-model pipeline (palm detector + hand landmarks) with fixed 2-hand-slot output
 - **signlang_det**: Dual-hand sign language recognition using BiLSTM encoder + DTW matching against SQLite prototype database
+- **signlang_manager**: BLE GATT access point for handpose streaming and runtime gesture prototype database management
 - **state_machine**: Global state coordinator managing module lifecycle via Event + Blackboard + Request-Response IPC
 - **launcher**: Unified process orchestrator loading all modules from TOML configuration with health monitoring
 
@@ -68,6 +75,7 @@ Default state is `Normal`. ASR and sign language modules remain disabled in this
 - **Threshold-based detection**: env_sound_det uses flexible score filtering (0-32 classes) instead of fixed top-K
 - **BiLSTM + DTW hybrid**: Sign language recognition combines neural encoding with dynamic time warping for speed invariance
 - **SQLite prototype storage**: Runtime vocabulary boundary decoupled from BiLSTM encoder model
+- **BLE management API**: Runtime handpose streaming and gesture add/list/delete over a custom GATT service
 
 ## Build
 
@@ -86,6 +94,7 @@ Default state is `Normal`. ASR and sign language modules remain disabled in this
 - librga 2.0+ (Rockchip RGA hardware acceleration)
 - SQLiteCpp (sign language prototype database)
 - cxxopts, toml++ (CLI and config parsing, header-only)
+- GLib/GIO + BlueZ runtime (BLE GATT service for signlang_manager)
 
 ### Cross-compilation
 
@@ -119,6 +128,7 @@ install/
 │   ├── speech_asr
 │   ├── env_sound_det
 │   ├── handpose_det
+│   ├── signlang_manager
 │   └── signlang_det
 ├── lib/              # Shared libraries
 │   ├── libiceoryx2_cxx.so
@@ -170,6 +180,11 @@ confidence = 0.5           # Detection confidence threshold (0.0-1.0)
 npu_core = "0"
 sequence_length = 30       # Sliding window frame count
 confidence_threshold = 0.6 # Recognition confidence threshold (0.0-1.0)
+
+[signlang_manager]
+npu_core = "0"
+bluetooth_name = "SignLang Eyes"
+stream_fps = 30
 ```
 
 IPC service names are **hardcoded** in the launcher and cannot be configured via TOML.
@@ -189,7 +204,7 @@ Or use default configuration:
 ./launcher
 ```
 
-The launcher spawns all 7 modules in dependency order, monitors their health, and performs coordinated shutdown on SIGINT/SIGTERM or child failure.
+The launcher spawns all modules in dependency order, monitors their health, and performs coordinated shutdown on SIGINT/SIGTERM or child failure.
 
 ### Run individual modules
 
@@ -211,6 +226,9 @@ The launcher spawns all 7 modules in dependency order, monitors their health, an
 
 # Hand pose detection
 ./bin/handpose_det --npu-core 2 --confidence 0.5
+
+# BLE sign language manager
+./bin/signlang_manager --input-service handpose_result --signlang-control-service signlang_prototype_control
 
 # Sign language recognition
 ./bin/signlang_det --npu-core 0 --sequence-length 30
@@ -237,6 +255,7 @@ src/
 ├── env_sound_det/    Environmental sound detection module
 ├── handpose_det/     Hand pose detection module
 ├── signlang_det/     Sign language recognition module
+├── signlang_manager/ BLE handpose stream and gesture DB manager
 ├── state_machine/    State machine module
 └── launcher/         Launcher module
 third_party/          Third-party dependencies

@@ -25,6 +25,7 @@ namespace signlang::signlang_det {
   struct ProgramOptions {
     std::string input_service_name;
     std::string output_service_name;
+    std::optional<std::string> prototype_control_service_name;
     std::optional<std::string> state_event_service_name;
     std::optional<std::string> state_blackboard_service_name;
     std::string model_path;

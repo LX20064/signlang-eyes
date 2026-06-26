@@ -103,6 +103,48 @@ namespace signlang::signlang_det {
     }
   }
 
+  auto IpcPrototypeControlServer::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
+    iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
+
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
+    if (!node.has_value()) {
+      throw std::runtime_error("Failed to create iceoryx2 node for signlang prototype control server");
+    }
+    return std::move(node.value());
+  }
+
+  auto IpcPrototypeControlServer::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
+                                                 const std::string& service_name)
+      -> iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void,
+                                          PrototypeControlResponse, void> {
+    auto service = node.service_builder(service_name_from_string(service_name))
+                       .request_response<PrototypeControlRequest, PrototypeControlResponse>()
+                       .max_servers(1)
+                       .max_clients(4)
+                       .max_active_requests_per_client(1)
+                       .max_response_buffer_size(1)
+                       .open_or_create();
+    if (!service.has_value()) {
+      throw std::runtime_error("Failed to open or create signlang prototype control service: " + service_name);
+    }
+    return std::move(service.value());
+  }
+
+  auto IpcPrototypeControlServer::create_server(
+      const iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void,
+                                             PrototypeControlResponse, void>& service)
+      -> iox2::Server<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse, void> {
+    auto server = service.server_builder().create();
+    if (!server.has_value()) {
+      throw std::runtime_error("Failed to create signlang prototype control server");
+    }
+    return std::move(server.value());
+  }
+
+  IpcPrototypeControlServer::IpcPrototypeControlServer(const std::string& service_name) :
+      node_{create_node()}, service_{create_service(node_, service_name)}, server_{create_server(service_)} {}
+
   IpcSignlangDetStateMonitor::IpcSignlangDetStateMonitor(const std::string& event_service_name,
                                                          const std::string& blackboard_service_name) :
       node_{create_node()}, listener_{create_listener(node_, event_service_name)},

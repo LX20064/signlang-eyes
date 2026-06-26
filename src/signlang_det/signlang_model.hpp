@@ -120,6 +120,9 @@ namespace signlang::signlang_det {
     auto infer(const std::vector<FeatureVector>& sequence) -> InferenceResult;
     auto get_gesture_name(std::uint32_t gesture_id) const -> const char*;
     auto expected_sequence_length() const -> std::uint32_t;
+    void reload_prototypes(const std::string& prototypes_path);
+    auto loaded_gesture_count() const -> std::size_t;
+    auto loaded_sample_count() const -> std::size_t;
 
   private:
     std::unique_ptr<BilstmEncoder> encoder_;

@@ -2,6 +2,7 @@
 #define SIGNLANG_EYES_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
 
 #include "handpose_det/handpose_frame.hpp"
+#include "prototype_control.hpp"
 #include "signlang_result.hpp"
 
 #include "iox2/iceoryx2.hpp"
@@ -58,6 +59,34 @@ namespace signlang::signlang_det {
     iox2::Node<iox2::ServiceType::Ipc> node_;
     iox2::Publisher<iox2::ServiceType::Ipc, SignlangResult, void> publisher_;
     std::uint64_t sequence_number_{0};
+  };
+
+  class IpcPrototypeControlServer {
+  public:
+    explicit IpcPrototypeControlServer(const std::string& service_name);
+
+    IpcPrototypeControlServer(const IpcPrototypeControlServer&) = delete;
+    auto operator=(const IpcPrototypeControlServer&) -> IpcPrototypeControlServer& = delete;
+    IpcPrototypeControlServer(IpcPrototypeControlServer&&) = delete;
+    auto operator=(IpcPrototypeControlServer&&) -> IpcPrototypeControlServer& = delete;
+
+    template <typename Handler>
+    void process_pending_requests(Handler&& handler);
+
+  private:
+    static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
+    static auto create_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
+        -> iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void,
+                                            PrototypeControlResponse, void>;
+    static auto create_server(const iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest,
+                                                                     void, PrototypeControlResponse, void>& service)
+        -> iox2::Server<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse, void>;
+
+    iox2::Node<iox2::ServiceType::Ipc> node_;
+    iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse,
+                                     void>
+        service_;
+    iox2::Server<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse, void> server_;
   };
 
   /// Event-driven sign language detection state monitor
@@ -123,6 +152,29 @@ namespace signlang::signlang_det {
 
     handler(metadata, payload.data(), metadata.detection_count);
     return true;
+  }
+
+  template <typename Handler>
+  void IpcPrototypeControlServer::process_pending_requests(Handler&& handler) {
+    auto receive_result = server_.receive();
+    if (!receive_result.has_value()) {
+      throw std::runtime_error("Failed to receive signlang prototype control request");
+    }
+
+    auto active_request = std::move(receive_result.value());
+    while (active_request.has_value()) {
+      auto response = handler(active_request.value().payload());
+      const auto send_result = active_request.value().send_copy(response);
+      if (!send_result.has_value()) {
+        throw std::runtime_error("Failed to send signlang prototype control response");
+      }
+
+      receive_result = server_.receive();
+      if (!receive_result.has_value()) {
+        throw std::runtime_error("Failed to receive signlang prototype control request");
+      }
+      active_request = std::move(receive_result.value());
+    }
   }
 
 } // namespace signlang::signlang_det
