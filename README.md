@@ -137,12 +137,13 @@ install/
 │   ├── libspdlog.so
 │   └── librga.so
 ├── conf/             # Configuration files
-│   └── conf.toml
+│   ├── conf.toml
+│   └── prototypes.sqlite
 └── models/           # AI model files
     ├── whisper/
     ├── yamnet/
     ├── mediapipe/
-    └── signlang/
+    └── bilstm/
 ```
 
 ## Configuration
@@ -179,12 +180,16 @@ single_hand = false        # true for one hand, false for two hands
 
 [signlang_det]
 npu_core = "0"
+model = "models/bilstm/biltsm.rknn"
+prototypes = "conf/prototypes.sqlite"
 sequence_length = 30       # Sliding window frame count
 confidence_threshold = 0.6 # Recognition confidence threshold (0.0-1.0)
 
 [signlang_manager]
 npu_core = "0"
 bluetooth_name = "SignLang Eyes"
+model = "models/bilstm/biltsm.rknn"
+prototypes = "conf/prototypes.sqlite"
 stream_fps = 30
 ```
 

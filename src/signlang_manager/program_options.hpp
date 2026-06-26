@@ -12,8 +12,8 @@ namespace signlang::signlang_manager {
 
   constexpr const char* kDefaultBluetoothName = "SignLang Eyes";
   constexpr const char* kDefaultAdapterPath = "/org/bluez/hci0";
-  constexpr const char* kDefaultModelPath = "models/signlang/signlang.rknn";
-  constexpr const char* kDefaultPrototypesPath = "models/signlang/prototypes.sqlite";
+  constexpr const char* kDefaultModelPath = "models/bilstm/biltsm.rknn";
+  constexpr const char* kDefaultPrototypesPath = "conf/prototypes.sqlite";
   constexpr auto kDefaultMinConfidence = float{0.3F};
   constexpr auto kDefaultMotionWeight = float{0.0F};
   constexpr auto kDefaultSubscriberBufferSize = std::uint64_t{2};

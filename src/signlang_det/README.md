@@ -32,8 +32,8 @@ When both state gate services are provided, sign language recognition reads the 
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--model` / `-m` | `models/signlang/signlang.rknn` | BiLSTM encoder RKNN model path |
-| `--prototypes` | `models/signlang/prototypes.sqlite` | SQLite gesture vocabulary and encoded prototype database |
+| `--model` / `-m` | `models/bilstm/biltsm.rknn` | BiLSTM encoder RKNN model path |
+| `--prototypes` | `conf/prototypes.sqlite` | SQLite gesture vocabulary and encoded prototype database |
 
 ### Feature & Window
 
@@ -407,7 +407,7 @@ iox2-list
 
 ### Gesture Not Recognized
 
-- Check if the gesture is enabled in `models/signlang/prototypes.sqlite`
+- Check if the gesture is enabled in `conf/prototypes.sqlite`
 - Verify at least one sample exists for that gesture
 - Try longer sequence length: `--sequence-length 45`
 
@@ -415,7 +415,7 @@ iox2-list
 
 Ensure RKNN model is present and `librknnrt.so` is in library path:
 ```bash
-ls models/signlang/
+ls models/bilstm/
 export LD_LIBRARY_PATH=/path/to/lib:$LD_LIBRARY_PATH
 ```
 

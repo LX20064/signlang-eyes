@@ -79,3 +79,6 @@ AGENTS.md
 
 # Proprietary or generated inference assets
 models/
+
+# SQLite
+*.sqlite

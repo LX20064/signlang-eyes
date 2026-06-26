@@ -11,8 +11,8 @@
 
 namespace signlang::signlang_det {
 
-  constexpr const char* kDefaultModelPath = "models/signlang/signlang.rknn";
-  constexpr const char* kDefaultPrototypesPath = "models/signlang/prototypes.sqlite";
+  constexpr const char* kDefaultModelPath = "models/bilstm/biltsm.rknn";
+  constexpr const char* kDefaultPrototypesPath = "conf/prototypes.sqlite";
   constexpr auto kDefaultSequenceLength = std::uint32_t{30};
   constexpr auto kDefaultOverlapRatio = float{0.2F};
   constexpr auto kDefaultMinConfidence = float{0.3F};

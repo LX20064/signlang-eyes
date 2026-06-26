@@ -83,8 +83,8 @@ During commit, the manager:
 | `--signlang-control-service` | required | prototype reload request-response service |
 | `--bluetooth-name` | `SignLang Eyes` | BLE advertising local name |
 | `--adapter-path` | `/org/bluez/hci0` | BlueZ adapter object path |
-| `--model` | `models/signlang/signlang.rknn` | RKNN encoder model |
-| `--prototypes` | `models/signlang/prototypes.sqlite` | SQLite prototype DB |
+| `--model` | `models/bilstm/biltsm.rknn` | RKNN encoder model |
+| `--prototypes` | `conf/prototypes.sqlite` | SQLite prototype DB |
 | `--min-confidence` | `0.3` | minimum hand confidence for uploaded samples |
 | `--motion-weight` | `0.0` | velocity feature weight |
 | `--upload-window-overlap` | `0.5` | overlap when long uploads are split into samples |
