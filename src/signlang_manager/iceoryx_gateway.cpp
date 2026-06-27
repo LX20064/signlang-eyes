@@ -53,6 +53,38 @@ namespace signlang::signlang_manager {
     return std::move(subscriber.value());
   }
 
+  IpcSignlangResultSubscriber::IpcSignlangResultSubscriber(const std::string& service_name,
+                                                           std::uint64_t subscriber_buffer_size) :
+      node_{create_node()}, subscriber_{create_subscriber(node_, service_name, subscriber_buffer_size)} {}
+
+  auto IpcSignlangResultSubscriber::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
+    iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
+
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
+    if (!node.has_value()) {
+      throw std::runtime_error("Failed to create iceoryx2 node for signlang manager result subscriber");
+    }
+    return std::move(node.value());
+  }
+
+  auto IpcSignlangResultSubscriber::create_subscriber(const iox2::Node<iox2::ServiceType::Ipc>& node,
+                                                      const std::string& service_name, std::uint64_t buffer_size)
+      -> iox2::Subscriber<iox2::ServiceType::Ipc, signlang_det::SignlangResult, void> {
+    auto service = node.service_builder(service_name_from_string(service_name))
+                       .publish_subscribe<signlang_det::SignlangResult>()
+                       .open_or_create();
+    if (!service.has_value()) {
+      throw std::runtime_error("Failed to open signlang result service in signlang manager: " + service_name);
+    }
+
+    auto subscriber = service.value().subscriber_builder().buffer_size(buffer_size).create();
+    if (!subscriber.has_value()) {
+      throw std::runtime_error("Failed to create signlang manager result subscriber");
+    }
+    return std::move(subscriber.value());
+  }
+
   IpcPrototypeControlClient::IpcPrototypeControlClient(const std::string& service_name) :
       node_{create_node()}, service_{create_service(node_, service_name)}, client_{create_client(service_)} {}
 

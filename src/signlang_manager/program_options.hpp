@@ -23,6 +23,7 @@ namespace signlang::signlang_manager {
 
   struct ProgramOptions {
     std::string input_service_name;
+    std::string signlang_result_service_name;
     std::string signlang_control_service_name;
     std::string bluetooth_name;
     std::string adapter_path;

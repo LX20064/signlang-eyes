@@ -16,6 +16,7 @@ namespace signlang::signlang_manager {
     constexpr auto kStatusNotFound = std::uint16_t{2};
     constexpr auto kStatusInternalError = std::uint16_t{3};
     constexpr auto kStatusUnsupported = std::uint16_t{4};
+    constexpr auto kStreamPayloadVersionWithSignlang = std::uint8_t{2};
 
     void append_u8(std::vector<std::uint8_t>& out, std::uint8_t value) { out.push_back(value); }
 
@@ -29,6 +30,18 @@ namespace signlang::signlang_manager {
       out.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
       out.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
       out.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+    }
+
+    void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+      for (auto shift = 0U; shift < 64U; shift += 8U) {
+        out.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFFU));
+      }
+    }
+
+    void append_f32(std::vector<std::uint8_t>& out, float value) {
+      auto bits = std::uint32_t{0};
+      std::memcpy(&bits, &value, sizeof(bits));
+      append_u32(out, bits);
     }
 
     auto read_u8(const std::vector<std::uint8_t>& payload, std::size_t& offset) -> std::uint8_t {
@@ -84,6 +97,39 @@ namespace signlang::signlang_manager {
       return payload;
     }
 
+    auto fixed_cstr(const std::array<char, signlang_det::kMaxGestureNameLength>& value) -> std::string {
+      const auto end = std::find(value.begin(), value.end(), '\0');
+      return std::string{value.begin(), end};
+    }
+
+    auto encode_stream_payload(const handpose_det::HandPoseFrameMetadata& metadata,
+                               const handpose_det::HandPoseDetection* detections, std::uint32_t detection_count,
+                               const signlang_det::SignlangResult* signlang_result) -> std::vector<std::uint8_t> {
+      const auto handpose_payload = encode_wire_handpose_frame(metadata, detections, detection_count, kMaxHandCount);
+      auto out = std::vector<std::uint8_t>{};
+      out.reserve(handpose_payload.size() + 96U);
+
+      append_u8(out, kStreamPayloadVersionWithSignlang);
+      append_u8(out, signlang_result != nullptr ? 1U : 0U);
+      append_u16(out, 0);
+      append_u32(out, static_cast<std::uint32_t>(handpose_payload.size()));
+      out.insert(out.end(), handpose_payload.begin(), handpose_payload.end());
+
+      if (signlang_result != nullptr) {
+        append_u64(out, signlang_result->sequence_number);
+        append_u64(out, signlang_result->timestamp_ns);
+        append_u8(out, signlang_result->recognized ? 1U : 0U);
+        append_u32(out, signlang_result->gesture_id);
+        append_f32(out, signlang_result->confidence);
+        append_f32(out, signlang_result->second_confidence);
+        append_f32(out, signlang_result->confidence_margin);
+        append_f32(out, signlang_result->distance);
+        append_string(out, fixed_cstr(signlang_result->gesture_name));
+      }
+
+      return out;
+    }
+
     auto decode_uploaded_frames(const std::vector<std::uint8_t>& data) -> std::vector<WireHandposeFrame> {
       auto offset = std::size_t{0};
       const auto frame_count = read_u32(data, offset);
@@ -126,11 +172,13 @@ namespace signlang::signlang_manager {
 
   auto ManagerService::build_stream_packet(const handpose_det::HandPoseFrameMetadata& metadata,
                                            const handpose_det::HandPoseDetection* detections,
-                                           std::uint32_t detection_count) -> std::vector<std::uint8_t> {
+                                           std::uint32_t detection_count,
+                                           const signlang_det::SignlangResult* signlang_result)
+      -> std::vector<std::uint8_t> {
     auto packet = ProtocolPacket{};
     packet.type = PacketType::Stream;
     packet.command_id = static_cast<std::uint16_t>(CommandId::HandposeFrame);
-    packet.payload = encode_wire_handpose_frame(metadata, detections, detection_count, kMaxHandCount);
+    packet.payload = encode_stream_payload(metadata, detections, detection_count, signlang_result);
     return encode_packet(packet);
   }
 

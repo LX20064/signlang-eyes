@@ -38,6 +38,7 @@ namespace signlang::signlang_manager {
                              "Expose handpose streaming and sign language prototype database management over BLE"};
 
     options.add_options()("i,input-service", "Input handpose iceoryx2 service name", cxxopts::value<std::string>())(
+        "signlang-result-service", "signlang_det result publish-subscribe service name", cxxopts::value<std::string>())(
         "signlang-control-service", "signlang_det prototype reload request-response service name",
         cxxopts::value<std::string>())("bluetooth-name", "BLE advertising local name",
                                        cxxopts::value<std::string>()->default_value(kDefaultBluetoothName))(
@@ -68,9 +69,11 @@ namespace signlang::signlang_manager {
       return ProgramUsage{.text = options.help()};
     }
 
-    if (parsed_options.count("input-service") == 0 || parsed_options.count("signlang-control-service") == 0) {
-      throw std::runtime_error("Options --input-service and --signlang-control-service are required.\n\n" +
-                               options.help());
+    if (parsed_options.count("input-service") == 0 || parsed_options.count("signlang-result-service") == 0 ||
+        parsed_options.count("signlang-control-service") == 0) {
+      throw std::runtime_error(
+          "Options --input-service, --signlang-result-service, and --signlang-control-service are required.\n\n" +
+          options.help());
     }
 
     const auto min_confidence = parsed_options["min-confidence"].as<float>();
@@ -105,6 +108,7 @@ namespace signlang::signlang_manager {
 
     return ProgramOptions{
         .input_service_name = parsed_options["input-service"].as<std::string>(),
+        .signlang_result_service_name = parsed_options["signlang-result-service"].as<std::string>(),
         .signlang_control_service_name = parsed_options["signlang-control-service"].as<std::string>(),
         .bluetooth_name = parsed_options["bluetooth-name"].as<std::string>(),
         .adapter_path = parsed_options["adapter-path"].as<std::string>(),

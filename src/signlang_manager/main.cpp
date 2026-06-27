@@ -6,6 +6,7 @@
 #include "spdlog/spdlog.h"
 
 #include <chrono>
+#include <optional>
 
 namespace {
 
@@ -20,8 +21,10 @@ auto main(int argc, char** argv) -> int {
   using signlang::signlang_manager::BluetoothGattOptions;
   using signlang::signlang_manager::BluetoothGattServer;
   using signlang::signlang_manager::IpcHandposeSubscriber;
+  using signlang::signlang_manager::IpcSignlangResultSubscriber;
   using signlang::signlang_manager::ManagerService;
   using signlang::signlang_manager::parse_program_options;
+  using signlang::signlang_det::SignlangResult;
 
   return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting sign language manager");
@@ -36,17 +39,29 @@ auto main(int argc, char** argv) -> int {
     bluetooth.start([&manager](const auto& request) { return manager.handle_packet_bytes(request); });
 
     auto subscriber = IpcHandposeSubscriber{options.input_service_name, options.subscriber_buffer_size};
+    auto signlang_subscriber =
+        IpcSignlangResultSubscriber{options.signlang_result_service_name, options.subscriber_buffer_size};
     auto next_stream_time_ns = std::uint64_t{0};
+    auto pending_signlang_result = std::optional<SignlangResult>{};
 
     while (!signlang::runtime::shutdown_requested() && subscriber.wait_for_work()) {
+      signlang_subscriber.receive_latest([&](const auto& result) {
+        if (result.recognized) {
+          pending_signlang_result = result;
+        }
+      });
+
       subscriber.receive_latest([&](const auto& metadata, const auto* detections, auto count) {
         const auto now_ns = steady_timestamp_ns();
         if (!manager.streaming_enabled() || !bluetooth.notifications_enabled() || now_ns < next_stream_time_ns) {
           return;
         }
 
-        const auto packet = manager.build_stream_packet(metadata, detections, count);
+        const auto* signlang_result =
+            pending_signlang_result.has_value() ? &pending_signlang_result.value() : nullptr;
+        const auto packet = manager.build_stream_packet(metadata, detections, count, signlang_result);
         bluetooth.notify_packet(packet);
+        pending_signlang_result.reset();
         next_stream_time_ns = now_ns + manager.stream_interval_ns();
       });
     }

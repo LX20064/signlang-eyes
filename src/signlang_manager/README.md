@@ -5,6 +5,7 @@
 `signlang_manager` exposes a BLE GATT access point for external tools:
 
 - streams latest `handpose_det` results through BLE notifications
+- includes newly recognized `signlang_det` results in the next handpose stream notification
 - lists existing gesture prototypes
 - adds gestures from uploaded handpose recordings
 - deletes gestures from the SQLite prototype database
@@ -84,6 +85,7 @@ All module executables also accept `--log-file <path>` and `--log-rotate-size <b
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--input-service` | required | handpose iceoryx2 service |
+| `--signlang-result-service` | required | signlang result iceoryx2 service |
 | `--signlang-control-service` | required | prototype reload request-response service |
 | `--bluetooth-name` | `SignLang Eyes` | BLE advertising local name |
 | `--adapter-path` | `/org/bluez/hci0` | BlueZ adapter object path |

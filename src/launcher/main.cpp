@@ -518,7 +518,13 @@ static auto build_signlang_det_args(const toml::table& cfg) -> std::vector<std::
 static auto build_signlang_manager_args(const toml::table& cfg) -> std::vector<std::string> {
   using namespace signlang::launcher::ipc;
   std::vector<std::string> args = {
-      kExeSignlangManager, "--input-service", kHandposeOutput, "--signlang-control-service", kSignlangPrototypeControl,
+      kExeSignlangManager,
+      "--input-service",
+      kHandposeOutput,
+      "--signlang-result-service",
+      kSignlangOutput,
+      "--signlang-control-service",
+      kSignlangPrototypeControl,
   };
 
   if (const auto* tbl = cfg["signlang_manager"].as_table()) {
