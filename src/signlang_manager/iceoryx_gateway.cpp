@@ -1,22 +1,13 @@
 #include "iceoryx_gateway.hpp"
 
+#include "common/ipc_utils.hpp"
+
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace signlang::signlang_manager {
-  namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-      return parsed_service_name.value();
-    }
-
-  } // namespace
 
   IpcHandposeSubscriber::IpcHandposeSubscriber(const std::string& service_name, std::uint64_t subscriber_buffer_size) :
       node_{create_node()}, subscriber_{create_subscriber(node_, service_name, subscriber_buffer_size)} {}
@@ -40,7 +31,7 @@ namespace signlang::signlang_manager {
                                                 const std::string& service_name, std::uint64_t buffer_size)
       -> iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<handpose_det::HandPoseDetection>,
                           handpose_det::HandPoseFrameMetadata> {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .publish_subscribe<iox2::bb::Slice<handpose_det::HandPoseDetection>>()
                        .user_header<handpose_det::HandPoseFrameMetadata>()
                        .open_or_create();
@@ -73,7 +64,7 @@ namespace signlang::signlang_manager {
   auto IpcSignlangResultSubscriber::create_subscriber(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                       const std::string& service_name, std::uint64_t buffer_size)
       -> iox2::Subscriber<iox2::ServiceType::Ipc, signlang_det::SignlangResult, void> {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .publish_subscribe<signlang_det::SignlangResult>()
                        .open_or_create();
     if (!service.has_value()) {
@@ -146,7 +137,7 @@ namespace signlang::signlang_manager {
   auto IpcPrototypeControlClient::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                  const std::string& service_name) -> PrototypeControlService {
     auto service =
-        node.service_builder(service_name_from_string(service_name))
+        node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
             .request_response<signlang_det::PrototypeControlRequest, signlang_det::PrototypeControlResponse>()
             .max_servers(1)
             .max_clients(4)

@@ -10,18 +10,6 @@
 #include <utility>
 
 namespace signlang::speech_asr {
-  namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-
-      return parsed_service_name.value();
-    }
-
-  } // namespace
 
   IpcAudioSubscriber::IpcAudioSubscriber(const std::string& service_name, std::uint64_t subscriber_buffer_size) :
       node_{create_node()}, subscriber_{create_subscriber(node_, service_name, subscriber_buffer_size)} {}
@@ -71,7 +59,7 @@ namespace signlang::speech_asr {
   auto IpcAudioSubscriber::create_subscriber(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                              const std::string& service_name, std::uint64_t subscriber_buffer_size)
       -> iox2::Subscriber<iox2::ServiceType::Ipc, signlang::audio_frontend::AudioFrame, void> {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .publish_subscribe<signlang::audio_frontend::AudioFrame>()
                        .open_or_create();
     if (!service.has_value()) {

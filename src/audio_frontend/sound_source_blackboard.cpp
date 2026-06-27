@@ -1,5 +1,6 @@
 #include "sound_source_blackboard.hpp"
 
+#include "common/ipc_utils.hpp"
 #include "iox2/service_builder_blackboard_error.hpp"
 
 #include <stdexcept>
@@ -8,15 +9,6 @@
 
 namespace signlang::audio_frontend {
   namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-
-      return parsed_service_name.value();
-    }
 
     auto empty_localization_result() -> SoundSourceLocalizationResult {
       return SoundSourceLocalizationResult{
@@ -61,7 +53,7 @@ namespace signlang::audio_frontend {
   auto SoundSourceBlackboardPublisher::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                       const std::string& service_name)
       -> iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, SoundSourceLocalizationKey> {
-    const auto parsed_service_name = service_name_from_string(service_name);
+    const auto parsed_service_name = signlang::common::ipc::service_name_from_string(service_name);
     auto service =
         node.service_builder(parsed_service_name)
             .blackboard_creator<SoundSourceLocalizationKey>()

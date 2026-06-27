@@ -6,17 +6,6 @@
 #include <utility>
 
 namespace signlang::signlang_det {
-  namespace {
-
-    auto service_name_from_string(const std::string& name) -> iox2::ServiceName {
-      auto result = iox2::ServiceName::create(name.c_str());
-      if (!result.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + name);
-      }
-      return std::move(result.value());
-    }
-
-  } // namespace
 
   auto IpcHandposeSubscriber::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     auto node_result =
@@ -31,7 +20,7 @@ namespace signlang::signlang_det {
                                                 const std::string& service_name, std::uint64_t buffer_size)
       -> iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<handpose_det::HandPoseDetection>,
                           handpose_det::HandPoseFrameMetadata> {
-    auto service_result = node.service_builder(service_name_from_string(service_name))
+    auto service_result = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                               .publish_subscribe<iox2::bb::Slice<handpose_det::HandPoseDetection>>()
                               .user_header<handpose_det::HandPoseFrameMetadata>()
                               .open_or_create();
@@ -67,7 +56,7 @@ namespace signlang::signlang_det {
 
   auto IpcSignlangPublisher::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                             const std::string& service_name) -> ResultService {
-    auto service_result = node.service_builder(service_name_from_string(service_name))
+    auto service_result = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                               .publish_subscribe<SignlangResult>()
                               .open_or_create();
 
@@ -124,7 +113,7 @@ namespace signlang::signlang_det {
                                                  const std::string& service_name)
       -> iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void,
                                           PrototypeControlResponse, void> {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .request_response<PrototypeControlRequest, PrototypeControlResponse>()
                        .max_servers(1)
                        .max_clients(4)
