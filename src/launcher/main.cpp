@@ -179,6 +179,9 @@ namespace {
     if (auto node = tbl[key].as_floating_point()) {
       return node->get();
     }
+    if (auto node = tbl[key].as_integer()) {
+      return static_cast<double>(node->get());
+    }
     return std::nullopt;
   }
 
