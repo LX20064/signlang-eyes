@@ -1,23 +1,12 @@
 #include "iceoryx_gateway.hpp"
 
-#include <new>
+#include "common/ipc_utils.hpp"
+
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace signlang::env_sound_det {
-  namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-
-      return parsed_service_name.value();
-    }
-
-  } // namespace
 
   IpcAudioSubscriber::IpcAudioSubscriber(const std::string& service_name, std::uint64_t subscriber_buffer_size) :
       node_{create_node()}, subscriber_{create_subscriber(node_, service_name, subscriber_buffer_size)} {}
@@ -55,9 +44,8 @@ namespace signlang::env_sound_det {
   auto IpcAudioSubscriber::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
 
-    auto node = iox2::NodeBuilder()
-                    .signal_handling_mode(iox2::SignalHandlingMode::Disabled)
-                    .create<iox2::ServiceType::Ipc>();
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
     if (!node.has_value()) {
       throw std::runtime_error("Failed to create iceoryx2 IPC audio subscriber node");
     }
@@ -66,11 +54,11 @@ namespace signlang::env_sound_det {
   }
 
   auto IpcAudioSubscriber::create_subscriber(const iox2::Node<iox2::ServiceType::Ipc>& node,
-                                             const std::string& service_name,
-                                             std::uint64_t subscriber_buffer_size)
+                                             const std::string& service_name, std::uint64_t subscriber_buffer_size)
       -> iox2::Subscriber<iox2::ServiceType::Ipc, signlang::audio_frontend::AudioFrame, void> {
-    auto service =
-        node.service_builder(service_name_from_string(service_name)).publish_subscribe<signlang::audio_frontend::AudioFrame>().open_or_create();
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
+                       .publish_subscribe<signlang::audio_frontend::AudioFrame>()
+                       .open_or_create();
     if (!service.has_value()) {
       throw std::runtime_error("Failed to open or create iceoryx2 audio service: " + service_name);
     }
@@ -96,12 +84,13 @@ namespace signlang::env_sound_det {
     (void)client_.send_copy(request);
   }
 
+  auto IpcStateControlClient::has_server() const -> bool { return signlang::common::ipc::has_servers(service_); }
+
   auto IpcStateControlClient::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
 
-    auto node = iox2::NodeBuilder()
-                    .signal_handling_mode(iox2::SignalHandlingMode::Disabled)
-                    .create<iox2::ServiceType::Ipc>();
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
     if (!node.has_value()) {
       throw std::runtime_error("Failed to create iceoryx2 IPC state control client node");
     }
@@ -111,7 +100,7 @@ namespace signlang::env_sound_det {
 
   auto IpcStateControlClient::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                              const std::string& service_name) -> StateControlService {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .request_response<signlang::state_machine::StateControlRequest,
                                          signlang::state_machine::StateControlResponse>()
                        .max_servers(1)

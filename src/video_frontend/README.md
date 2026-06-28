@@ -2,14 +2,18 @@
 
 ## Overview
 
-The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) camera device and publishes RGB24 frames as an iceoryx2 byte slice with `VideoFrameMetadata` user-header metadata. It supports YUYV and MJPEG capture, normalizes both to RGB24, and applies optional hardware-accelerated scaling via Rockchip RGA.
+The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) camera device and publishes RGB24 frames as an iceoryx2 byte slice with `VideoFrameMetadata` user-header metadata. It supports YUYV and MJPEG capture formats, normalizes both to RGB24, and applies hardware-accelerated format conversion and scaling via Rockchip RGA.
 
 - **Executable**: `video_frontend` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (producer)
+- **IPC Pattern**: Publish-Subscribe (producer with user header)
 - **Input**: V4L2 camera device (YUYV 4:2:2 or MJPEG)
-- **Output**: `iox2::bb::Slice<std::uint8_t>` with `signlang::video_frontend::VideoFrameMetadata` user header on iceoryx2
+- **Output**: `iox2::bb::Slice<std::uint8_t>` + `signlang::video_frontend::VideoFrameMetadata` user header on iceoryx2
 
 ## Command-Line Parameters
+
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -20,6 +24,7 @@ The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) c
 | `--output-width` | (matches capture) | Published output width in pixels |
 | `--output-height` | (matches capture) | Published output height in pixels |
 | `--fps` | `30` | Requested camera frame rate |
+| `--mirror-output` | `false` | Horizontally mirror the published RGB output frame |
 | `--help` / `-h` | — | Print usage |
 
 > **Note**: `--capture-width` and `--capture-height` must be specified together (or omitted together). Same rule applies to `--output-width` and `--output-height`.
@@ -31,20 +36,29 @@ The **video_frontend** module captures video frames from a V4L2 (Video4Linux2) c
 - **Capture Pixel Format**: YUYV 4:2:2 or MJPEG
 - **Published Pixel Format**: RGB24
 - **Output Frame Size**: `width × height × 3` bytes
-- **Hardware Acceleration**: Rockchip RGA used for YUYV→RGB24 conversion and scaling
+- **Hardware Acceleration**: Rockchip RGA used for YUYV→RGB24 conversion, scaling, and optional horizontal mirroring
 
 ### Processing Pipeline
 
-1. **YUYV capture**: RGA hardware converts YUYV to RGB24 and scales in a single operation
-2. **MJPEG capture**: libjpeg-turbo decodes to RGB24, then RGA scales if needed
+1. **YUYV capture**: RGA hardware converts YUYV to RGB24, scales, and optionally mirrors in a single operation
+2. **MJPEG capture**: libjpeg-turbo decodes to RGB24, then RGA scales and optionally mirrors
 
 ### RGA Hardware Acceleration
 
 The Rockchip RGA (Raster Graphic Acceleration) unit provides:
-- Zero-copy format conversion (YUYV → RGB24)
+- Zero-copy format conversion (YUYV → RGB24) via DMA buffers
 - Hardware scaling with bilinear interpolation
-- ~50x performance improvement over CPU-based conversion
+- ~50× performance improvement over CPU-based conversion
 - Typical processing time: 2-5ms per frame at 1080p
+- Eliminates CPU overhead for pixel format transformation
+
+**RGA vs CPU Performance:**
+
+| Operation | CPU (software) | RGA (hardware) | Speedup |
+|-----------|----------------|----------------|---------|
+| 1920×1080 YUYV→RGB24 | ~100ms | ~2ms | 50× |
+| 640×480 YUYV→RGB24 + scale from 1080p | ~120ms | ~3ms | 40× |
+| CPU utilization | 100% (1 core) | <5% | 20× |
 
 ### Published Sample Structure
 
@@ -105,7 +119,7 @@ VideoProcessor
 
 ```bash
 # Capture from /dev/video0 at default resolution and 30 fps
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture
 ```
@@ -114,7 +128,7 @@ VideoProcessor
 
 ```bash
 # Capture 1080p, publish 640x480
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture \
     --capture-width 1920 \
@@ -128,7 +142,7 @@ VideoProcessor
 
 ```bash
 # 60 fps capture
-./video_frontend \
+install/bin/video_frontend \
     --device /dev/video0 \
     --service video_capture \
     --fps 60
@@ -148,7 +162,7 @@ v4l2-ctl -d /dev/video0 --list-formats-ext
 
 | File | Description |
 |------|-------------|
-| `main.cpp` | Entry point; signal handling (SIGINT/SIGTERM), main capture loop |
+| `main.cpp` | Entry point; main capture loop |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `v4l2_capture_device.{cpp,hpp}` | V4L2 device enumeration, format negotiation, frame capture |
 | `video_format.hpp` | `VideoFormat`, `VideoFormatRequest` structs |
@@ -181,19 +195,12 @@ Raw RGB24 byte array:
 
 ## Performance Characteristics
 
-- **Zero-copy publishing**: Video frames published directly from RGA output buffer
-- **Hardware acceleration**: RGA processes YUYV→RGB24 in ~2-5ms at 1080p
-- **Throughput**: Sustained 30 fps at 1080p with <5% CPU usage
-- **Latency**: Glass-to-glass latency ~50-70ms (camera → RGA → publish)
-- **CPU usage**: ~3-5% on single core during active capture (Cortex-A76)
-
-## RGA vs CPU Conversion Performance
-
-| Operation | CPU (software) | RGA (hardware) | Speedup |
-|-----------|----------------|----------------|---------|
-| 1920×1080 YUYV→RGB24 | ~100ms | ~2ms | 50× |
-| 640×480 YUYV→RGB24 + scale from 1080p | ~120ms | ~3ms | 40× |
-| CPU utilization | 100% (1 core) | <5% | 20× |
+- **Zero-copy publishing**: Video frames published directly from RGA output buffer via shared memory
+- **Hardware acceleration**: RGA processes YUYV→RGB24 in ~2-5ms at 1080p (50× faster than CPU)
+- **Throughput**: Sustained 30 fps at 1080p with <5% CPU usage on single core
+- **Latency**: Glass-to-glass latency ~50-70ms (camera → V4L2 → RGA → publish)
+- **CPU usage**: ~3-5% on single core during active capture (Cortex-A76 @ 2.4GHz)
+- **Memory**: ~12MB for V4L2 buffers + RGA intermediate buffers (4 buffers per stream)
 
 ## Troubleshooting
 

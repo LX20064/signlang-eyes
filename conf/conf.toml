@@ -1,71 +1,114 @@
+[launcher]
+# restart_attempts = -1            # Restart whole system after module startup/runtime failure; <0 means unlimited
+
 [logging]
-rotate_size = 1048576
-retain_files = 100
+rotate_size = 1048576              # Log rotation size in bytes
+retain_files = 100                 # Number of log files to retain
+
+[state_machine]
+# initial_state = "normal"         # normal, asr, sign_language_chat, sign_language_ai
 
 [audio_frontend]
 device = "hw:2,0"                  # ALSA device name (e.g. "hw:0,0", "default")
-capture_rate = 16000               # Requested capture sample rate in Hz
-capture_channels = 2               # Requested capture channel count
+capture_rate = 16000               # Requested capture sample rate in Hz; omit to auto-select from ALSA
+capture_channels = 2               # Requested capture channel count; omit to auto-select from ALSA
 # publish_rate = 16000             # Published sample rate in Hz
 # publish_channels = 1             # Published channel count
 # period_ms = 100                  # Publish period in milliseconds
 # localization_tdoa_weight = 0.7   # TDOA contribution to channel proximity score
-# localization_rms_weight = 0.3    # RMS energy contribution; must sum with TDOA weight to 1.0
+# localization_rms_weight = 0.3    # RMS contribution; must sum with TDOA weight to 1.0
 
 [video_frontend]
 device = "/dev/video21"            # V4L2 camera device path
-output_width = 640                 # Published output width
-output_height = 480                # Published output height
-# capture_width = 1920             # Requested capture width
-# capture_height = 1080            # Requested capture height
+output_width = 640                 # Published output width; omit to match capture width
+output_height = 480                # Published output height; omit to match capture height
+# mirror_output = false            # Horizontally mirror frames before publishing
+# capture_width = 1920             # Requested capture width; omit to use largest supported camera mode
+# capture_height = 1080            # Requested capture height; omit to use largest supported camera mode
 # fps = 30                         # Requested frame rate
 
 [speech_asr]
-language = "zh"                    # Recognition language: "en" or "zh"
-npu_core = "1"                     # auto, all, 0, 1, 2, 0_1, 0_1_2
-# window_ms = 15000                # ASR window length in ms
+language = "zh"                    # Recognition language: en, zh; default is en
+npu_core = "1"                     # auto, all, 0, 1, 2, 0_1, 0_1_2; default is auto
+# window_ms = 15000                # ASR window length in milliseconds
 # overlap = 0.2                    # Overlap ratio between adjacent windows
-# max_decode_steps = 96            # Max autoregressive decoder steps
+# max_decode_steps = 96            # Max autoregressive decoder steps per window
 # encoder_model = "models/whisper/whisper_encoder_base_15s.rknn"
 # decoder_model = "models/whisper/whisper_decoder_base_15s.rknn"
 # vocab_en = "models/whisper/vocab_en.txt"
 # vocab_zh = "models/whisper/vocab_zh.txt"
 # mel_filters = "models/whisper/mel_80_filters.txt"
-# encoder_npu_core = ""            # Override encoder NPU core (empty = use npu_core)
-# decoder_npu_core = ""            # Override decoder NPU core (empty = use npu_core)
+# encoder_npu_core = "1"           # Encoder NPU core override; defaults to npu_core when omitted
+# decoder_npu_core = "1"           # Decoder NPU core override; defaults to npu_core when omitted
 # rknn_priority = "medium"         # high, medium, low
 # subscriber_buffer = 2            # iceoryx2 subscriber queue size
 
 [env_sound_det]
-npu_core = "0"
-# window_ms = 3000                 # Detection window length in ms
-# overlap = 0.2                    # Overlap ratio between adjacent windows
+npu_core = "0"                     # auto, all, 0, 1, 2, 0_1, 0_1_2; default is auto
+# window_ms = 3000                 # Detection window length in milliseconds
+# overlap = 0.2                    # Overlap ratio between adjacent detection windows
 # score_threshold = 0.3            # Minimum score threshold for dangerous sound detection
 # model = "models/yamnet/yamnet_3s.rknn"
 # class_map = "models/yamnet/yamnet_class_map.txt"
-# rknn_priority = "medium"
-# subscriber_buffer = 2
+# rknn_priority = "medium"         # high, medium, low
+# subscriber_buffer = 2            # iceoryx2 subscriber queue size
 
 [handpose_det]
-npu_core = "2"
-# palm_npu_core = ""              # Override palm detector NPU core (empty = use npu_core)
-# landmark_npu_core = ""          # Override landmark model NPU core (empty = use npu_core)
+npu_core = "2"                     # auto, all, 0, 1, 2, 0_1, 0_1_2; default is auto
+swap_handedness = true             # Swap left/right handedness for mirrored cameras
 # model = "models/mediapipe/hand_detector.rknn"
 # landmark_model = "models/mediapipe/hand_landmarks_detector.rknn"
-# confidence = 0.5                 # Detection confidence threshold
-# keypoints = 21                   # Expected keypoint count per hand
-# output_hands = 2                 # Fixed number of hand slots published per frame
-# subscriber_buffer = 2
+# confidence = 0.5                 # Palm detection confidence threshold
+# presence_threshold = 0.5         # Hand presence confidence threshold
+# tracking_threshold = 0.5         # Tracking confidence threshold for reusing ROI
+# nms_iou_threshold = 0.3          # NMS IoU threshold for weighted merge
+# tracking_iou_match = 0.3         # IoU threshold for matching detections to tracked hands
+# crop_expansion = 2.0             # Expansion factor for tracking crop from bounding box
+# base_roi_expansion = 2.6         # Base ROI expansion from palm keypoints
+# small_hand_expansion = 3.0       # Expansion factor for small hands
+# large_hand_expansion = 2.3       # Expansion factor for large hands
+# small_hand_threshold = 60.0      # Pixel threshold below which a hand is considered small
+# large_hand_threshold = 120.0     # Pixel threshold above which a hand is considered large
+# boundary_margin = 50.0           # Distance to image edge triggering boundary shrink
+# boundary_min_factor = 0.7        # Minimum expansion multiplier at image boundary
+# euro_min_cutoff = 1.0            # One Euro Filter min cutoff frequency in Hz
+# euro_beta = 0.007                # One Euro Filter speed coefficient
+# euro_d_cutoff = 1.0              # One Euro Filter derivative cutoff frequency in Hz
+# handedness_threshold = 0.5       # Threshold for left/right hand classification
+# max_tracking_gap = 2             # Max frames gap before tracking is considered lost
+# max_stale_frames = 5             # Max frames before stale tracked hand slot is reclaimed
+# single_hand_full_frame_interval = 5 # Full-frame palm detection interval while one hand is tracked; 0 disables
+# stable_hands_full_frame_interval = 15 # Full-frame palm detection interval while all hand slots are tracked; 0 disables
+# single_hand = false              # true: recognize/publish one hand; false: two hands
+# palm_npu_core = "2"              # Palm detector NPU core override; defaults to npu_core when omitted
+# landmark_npu_core = "2"          # Landmark model NPU core override; defaults to npu_core when omitted
+# subscriber_buffer = 2            # iceoryx2 subscriber queue size
 
 [signlang_det]
-npu_core = "0"
-# model = "models/signlang/signlang.rknn"
-# prototypes = "models/signlang/prototypes.sqlite"
+npu_core = "0"                     # auto, all, 0, 1, 2, 0_1, 0_1_2; default is auto
+# model = "models/bilstm/biltsm.rknn"
+# prototypes = "conf/prototypes.sqlite"
 # sequence_length = 30             # Sliding window frame count
 # overlap_ratio = 0.2              # Window overlap ratio
 # min_confidence = 0.3             # Minimum keypoint confidence
 # motion_weight = 0.0              # Velocity feature weight
-# dtw_window_ratio = 0.5           # DTW Sakoe-Chiba window ratio
+# dtw_window_ratio = 0.5           # DTW window ratio
 # confidence_threshold = 0.6       # Minimum recognition confidence
-# confidence_margin = 0.1          # Min top-1 vs top-2 margin
-# subscriber_buffer = 2
+# confidence_margin = 0.1          # Min top-1 vs top-2 confidence margin
+# duplicate_suppression_ms = 1000  # Suppress repeated same recognized word within this window; 0 disables
+# subscriber_buffer = 2            # iceoryx2 subscriber queue size
+
+[signlang_manager]
+npu_core = "0"                     # auto, all, 0, 1, 2, 0_1, 0_1_2; default is auto
+# bluetooth_name = "SignLang Eyes"
+# adapter_path = "/org/bluez/hci0"
+# model = "models/bilstm/biltsm.rknn"
+# prototypes = "conf/prototypes.sqlite"
+# min_confidence = 0.3             # Minimum keypoint confidence for uploaded samples
+# motion_weight = 0.0              # Motion feature weight for uploaded samples
+# upload_window_overlap = 0.5      # Overlap ratio when long uploads split into samples
+# subscriber_buffer = 2            # iceoryx2 subscriber queue size
+# stream_fps = 30                  # Maximum BLE handpose streaming frame rate
+# max_notify_payload = 180         # Maximum BLE notification payload chunk size
+# max_upload_bytes = 8388608       # Maximum BLE gesture upload size in bytes
+# enable_streaming_by_default = false

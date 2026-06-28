@@ -46,8 +46,9 @@ namespace signlang::audio_frontend {
   public:
     SoundSourceLocalizer(float tdoa_weight, float rms_weight);
 
-    auto estimate(const std::vector<std::int16_t>& interleaved_samples, AudioFormat format,
-                  std::uint64_t sequence_number, std::uint64_t timestamp_ns) const -> SoundSourceLocalizationResult;
+    [[nodiscard]] auto estimate(const std::vector<std::int16_t>& interleaved_samples, AudioFormat format,
+                                std::uint64_t sequence_number, std::uint64_t timestamp_ns) const
+        -> SoundSourceLocalizationResult;
 
   private:
     struct LagEstimate {
@@ -55,9 +56,10 @@ namespace signlang::audio_frontend {
       float correlation;
     };
 
-    static auto estimate_lag(const std::vector<std::int16_t>& interleaved_samples, std::uint32_t first_frame,
-                             std::uint32_t frame_count, std::uint16_t channel_count, std::uint16_t channel_a,
-                             std::uint16_t channel_b, std::uint32_t max_lag_samples) -> LagEstimate;
+    [[nodiscard]] static auto estimate_lag(const std::vector<std::int16_t>& interleaved_samples,
+                                           std::uint32_t first_frame, std::uint32_t frame_count,
+                                           std::uint16_t channel_count, std::uint16_t channel_a,
+                                           std::uint16_t channel_b, std::uint32_t max_lag_samples) -> LagEstimate;
 
     float tdoa_weight_;
     float rms_weight_;

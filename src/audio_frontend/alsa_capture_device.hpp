@@ -13,8 +13,7 @@ namespace signlang::audio_frontend {
 
   class AlsaCaptureDevice {
   public:
-    AlsaCaptureDevice(const std::string& device_name, AudioFormatRequest format_request,
-                      std::uint32_t publish_period_ms);
+    AlsaCaptureDevice(std::string device_name, AudioFormatRequest format_request, std::uint32_t publish_period_ms);
     ~AlsaCaptureDevice() = default;
 
     AlsaCaptureDevice(const AlsaCaptureDevice&) = delete;
@@ -22,7 +21,7 @@ namespace signlang::audio_frontend {
     AlsaCaptureDevice(AlsaCaptureDevice&&) = delete;
     auto operator=(AlsaCaptureDevice&&) -> AlsaCaptureDevice& = delete;
 
-    auto format() const -> AudioFormat;
+    [[nodiscard]] auto format() const -> AudioFormat;
     auto capture_samples() -> const std::vector<std::int16_t>&;
 
   private:
@@ -42,7 +41,7 @@ namespace signlang::audio_frontend {
     AudioFormatRequest format_request_;
     AudioFormat format_;
     std::uint32_t publish_period_ms_;
-    snd_pcm_uframes_t frames_per_packet_;
+    snd_pcm_uframes_t frames_per_packet_{0};
     std::vector<std::int16_t> sample_buffer_;
   };
 

@@ -17,7 +17,7 @@ namespace signlang::video_frontend {
 
   class V4l2CaptureDevice {
   public:
-    V4l2CaptureDevice(const std::string& device_name, VideoFormatRequest format_request, std::uint32_t fps);
+    V4l2CaptureDevice(std::string device_name, VideoFormatRequest format_request, std::uint32_t fps);
     ~V4l2CaptureDevice();
 
     V4l2CaptureDevice(const V4l2CaptureDevice&) = delete;
@@ -25,10 +25,10 @@ namespace signlang::video_frontend {
     V4l2CaptureDevice(V4l2CaptureDevice&&) = delete;
     auto operator=(V4l2CaptureDevice&&) -> V4l2CaptureDevice& = delete;
 
-    auto format() const -> VideoFormat;
-    auto fps() const -> std::uint32_t;
-    auto max_frame_size_bytes() const -> std::uint32_t;
-    auto capture_frame() -> CapturedVideoFrame;
+    [[nodiscard]] auto format() const -> VideoFormat;
+    [[nodiscard]] auto fps() const -> std::uint32_t;
+    [[nodiscard]] auto max_frame_size_bytes() const -> std::uint32_t;
+    [[nodiscard]] auto capture_frame() -> CapturedVideoFrame;
     void release_frame();
 
   private:
@@ -40,8 +40,9 @@ namespace signlang::video_frontend {
     void open_device();
     void configure();
     void select_format();
-    auto select_largest_frame_size(std::uint32_t pixel_format) const -> VideoFormat;
-    auto supports_frame_size(std::uint32_t pixel_format, std::uint32_t width, std::uint32_t height) const -> bool;
+    [[nodiscard]] auto select_largest_frame_size(std::uint32_t pixel_format) const -> VideoFormat;
+    [[nodiscard]] auto supports_frame_size(std::uint32_t pixel_format, std::uint32_t width, std::uint32_t height) const
+        -> bool;
     void configure_format();
     void configure_fps();
     void configure_buffers();
@@ -49,8 +50,8 @@ namespace signlang::video_frontend {
     void stop_streaming() noexcept;
     void close_device() noexcept;
     void unmap_buffers() noexcept;
-    void enqueue_buffer(std::uint32_t buffer_index);
-    auto dequeue_frame() -> CapturedVideoFrame;
+    void enqueue_buffer(std::uint32_t buffer_index) const;
+    [[nodiscard]] auto dequeue_frame() -> CapturedVideoFrame;
 
     std::string device_name_;
     VideoFormatRequest format_request_;

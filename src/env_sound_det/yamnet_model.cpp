@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstring>
 #include <fstream>
-#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -56,7 +55,7 @@ namespace signlang::env_sound_det {
       std::copy_n(source.data(), copy_size, destination.data());
     }
 
-    auto trim_leading_spaces(std::string value) -> std::string {
+    auto trim_leading_spaces(const std::string& value) -> std::string {
       const auto first = value.find_first_not_of(" \t");
       if (first == std::string::npos) {
         return {};
@@ -132,8 +131,7 @@ namespace signlang::env_sound_det {
     }
 
     const auto end_time = std::chrono::steady_clock::now();
-    const auto inference_time_ms =
-        std::chrono::duration<float, std::milli>(end_time - start_time).count();
+    const auto inference_time_ms = std::chrono::duration<float, std::milli>(end_time - start_time).count();
 
     return YamnetInferenceResult{
         .model_input_sample_count = input_attrs_[0].n_elems,
@@ -283,7 +281,8 @@ namespace signlang::env_sound_det {
     }
 
     std::uint32_t detected_count = 0;
-    for (std::uint32_t class_index = 0; class_index < class_count && detected_count < kMaxDetectedClasses; ++class_index) {
+    for (std::uint32_t class_index = 0; class_index < class_count && detected_count < kMaxDetectedClasses;
+         ++class_index) {
       const auto score = mean_scores_[class_index];
       if (score >= score_threshold_) {
         detected_classes_[detected_count].class_index = class_index;

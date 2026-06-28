@@ -1,5 +1,6 @@
 #include "sound_source_blackboard.hpp"
 
+#include "common/ipc_utils.hpp"
 #include "iox2/service_builder_blackboard_error.hpp"
 
 #include <stdexcept>
@@ -8,15 +9,6 @@
 
 namespace signlang::audio_frontend {
   namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-
-      return parsed_service_name.value();
-    }
 
     auto empty_localization_result() -> SoundSourceLocalizationResult {
       return SoundSourceLocalizationResult{
@@ -49,9 +41,8 @@ namespace signlang::audio_frontend {
   auto SoundSourceBlackboardPublisher::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
 
-    auto node = iox2::NodeBuilder()
-                    .signal_handling_mode(iox2::SignalHandlingMode::Disabled)
-                    .create<iox2::ServiceType::Ipc>();
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
     if (!node.has_value()) {
       throw std::runtime_error("Failed to create iceoryx2 audio source localization node");
     }
@@ -62,12 +53,12 @@ namespace signlang::audio_frontend {
   auto SoundSourceBlackboardPublisher::create_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                       const std::string& service_name)
       -> iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, SoundSourceLocalizationKey> {
-    const auto parsed_service_name = service_name_from_string(service_name);
-    auto service = node.service_builder(parsed_service_name)
-                       .blackboard_creator<SoundSourceLocalizationKey>()
-                       .add<SoundSourceLocalizationResult>(default_sound_source_localization_key(),
-                                                           empty_localization_result())
-                       .create();
+    const auto parsed_service_name = signlang::common::ipc::service_name_from_string(service_name);
+    auto service =
+        node.service_builder(parsed_service_name)
+            .blackboard_creator<SoundSourceLocalizationKey>()
+            .add<SoundSourceLocalizationResult>(default_sound_source_localization_key(), empty_localization_result())
+            .create();
     if (service.has_value()) {
       return std::move(service.value());
     }
@@ -77,7 +68,8 @@ namespace signlang::audio_frontend {
       throw std::runtime_error("Failed to create iceoryx2 sound source blackboard service: " + service_name);
     }
 
-    auto opened_service = node.service_builder(parsed_service_name).blackboard_opener<SoundSourceLocalizationKey>().open();
+    auto opened_service =
+        node.service_builder(parsed_service_name).blackboard_opener<SoundSourceLocalizationKey>().open();
     if (!opened_service.has_value()) {
       throw std::runtime_error("Failed to open existing iceoryx2 sound source blackboard service: " + service_name);
     }
@@ -96,8 +88,8 @@ namespace signlang::audio_frontend {
     return std::move(writer.value());
   }
 
-  auto SoundSourceBlackboardPublisher::create_entry(
-      iox2::Writer<iox2::ServiceType::Ipc, SoundSourceLocalizationKey>& writer)
+  auto
+  SoundSourceBlackboardPublisher::create_entry(iox2::Writer<iox2::ServiceType::Ipc, SoundSourceLocalizationKey>& writer)
       -> iox2::EntryHandleMut<iox2::ServiceType::Ipc, SoundSourceLocalizationKey, SoundSourceLocalizationResult> {
     auto entry = writer.entry<SoundSourceLocalizationResult>(default_sound_source_localization_key());
     if (!entry.has_value()) {

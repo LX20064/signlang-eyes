@@ -5,10 +5,10 @@
 #include "video_frontend/video_frame.hpp"
 
 #include "iox2/iceoryx2.hpp"
-#include "state_machine/app_state.hpp"
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,8 +31,8 @@ namespace signlang::handpose_det {
 
   class HandPoseTransport {
   public:
-    HandPoseTransport(const std::string& input_service_name, const std::string& output_service_name,
-                      std::uint64_t subscriber_buffer_size, std::uint32_t output_capacity);
+    HandPoseTransport(std::string input_service_name, const std::string& output_service_name,
+                      std::uint64_t subscriber_buffer_size, std::uint32_t hand_slots);
 
     HandPoseTransport(const HandPoseTransport&) = delete;
     auto operator=(const HandPoseTransport&) -> HandPoseTransport& = delete;
@@ -43,64 +43,47 @@ namespace signlang::handpose_det {
     auto receive_latest(Handler&& handler) -> bool;
 
     void publish(const signlang::video_frontend::VideoFrameMetadata& source_metadata, std::uint64_t sequence_number,
-                 HandPosePublishInfo publish_info, const HandPoseDetection* detections);
+                 const HandPosePublishInfo& publish_info, const HandPoseDetection* detections);
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
+    void detach_upstream();
+    void ensure_upstream_attached();
 
   private:
+    using VideoSubscriber = iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<std::uint8_t>,
+                                             signlang::video_frontend::VideoFrameMetadata>;
+    using HandposeService =
+        iox2::PortFactoryPublishSubscribe<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>,
+                                          HandPoseFrameMetadata>;
+
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
     static auto create_video_subscriber(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name,
                                         std::uint64_t buffer_size)
         -> iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<std::uint8_t>,
                             signlang::video_frontend::VideoFrameMetadata>;
-    static auto create_handpose_publisher(const iox2::Node<iox2::ServiceType::Ipc>& node,
-                                          const std::string& service_name, std::uint32_t output_capacity)
+    static auto create_handpose_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
+        -> HandposeService;
+    static auto create_handpose_publisher(const HandposeService& service, std::uint32_t hand_slots)
         -> iox2::Publisher<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>, HandPoseFrameMetadata>;
     static auto timestamp_ns() -> std::uint64_t;
 
     iox2::Node<iox2::ServiceType::Ipc> node_;
-    iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<std::uint8_t>,
-                     signlang::video_frontend::VideoFrameMetadata>
-        subscriber_;
+    std::string input_service_name_;
+    std::uint64_t subscriber_buffer_size_;
+    std::optional<VideoSubscriber> subscriber_;
+    HandposeService service_;
     iox2::Publisher<iox2::ServiceType::Ipc, iox2::bb::Slice<HandPoseDetection>, HandPoseFrameMetadata> publisher_;
-    std::uint32_t output_capacity_;
-  };
-
-  class IpcHandPoseStateMonitor {
-  public:
-    IpcHandPoseStateMonitor(const std::string& event_service_name, const std::string& blackboard_service_name);
-
-    IpcHandPoseStateMonitor(const IpcHandPoseStateMonitor&) = delete;
-    auto operator=(const IpcHandPoseStateMonitor&) -> IpcHandPoseStateMonitor& = delete;
-    IpcHandPoseStateMonitor(IpcHandPoseStateMonitor&&) = delete;
-    auto operator=(IpcHandPoseStateMonitor&&) -> IpcHandPoseStateMonitor& = delete;
-
-    auto is_enabled() const -> bool;
-    void wait_for_state_change_blocking();
-    auto try_wait_for_state_change() -> bool;
-
-  private:
-    static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
-    static auto create_listener(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
-        -> iox2::Listener<iox2::ServiceType::Ipc>;
-    static auto open_blackboard_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
-        -> iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>;
-    static auto create_reader(
-        const iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>& service)
-        -> iox2::Reader<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>;
-
-    auto read_state_from_blackboard() -> signlang::state_machine::AppState;
-
-    iox2::Node<iox2::ServiceType::Ipc> node_;
-    iox2::Listener<iox2::ServiceType::Ipc> listener_;
-    iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey> blackboard_service_;
-    iox2::Reader<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey> reader_;
-    signlang::state_machine::AppState cached_state_;
+    std::uint32_t hand_slots_;
   };
 
   template <typename Handler>
   auto HandPoseTransport::receive_latest(Handler&& handler) -> bool {
-    auto latest_sample = subscriber_.receive();
+    if (!subscriber_.has_value()) {
+      return false;
+    }
+
+    auto latest_sample = subscriber_->receive();
     if (!latest_sample.has_value()) {
       throw std::runtime_error("Failed to receive video sample through iceoryx2");
     }
@@ -110,7 +93,7 @@ namespace signlang::handpose_det {
     }
 
     while (true) {
-      auto next_sample = subscriber_.receive();
+      auto next_sample = subscriber_->receive();
       if (!next_sample.has_value()) {
         throw std::runtime_error("Failed to receive video sample through iceoryx2");
       }
@@ -133,10 +116,10 @@ namespace signlang::handpose_det {
   }
 
   inline void HandPoseTransport::publish(const signlang::video_frontend::VideoFrameMetadata& source_metadata,
-                                         std::uint64_t sequence_number, HandPosePublishInfo publish_info,
+                                         std::uint64_t sequence_number, const HandPosePublishInfo& publish_info,
                                          const HandPoseDetection* detections) {
-    if (publish_info.detection_count > output_capacity_) {
-      throw std::runtime_error("Hand pose detection count exceeds output payload capacity");
+    if (publish_info.detection_count > hand_slots_) {
+      throw std::runtime_error("Hand pose detection count exceeds configured hand slots");
     }
 
     const auto loan_count = std::max<std::uint32_t>(1, publish_info.detection_count);

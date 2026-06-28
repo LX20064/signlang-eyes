@@ -5,7 +5,6 @@
 
 #include "rknn_api.h"
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -30,11 +29,11 @@ namespace signlang::signlang_det {
   public:
     static auto load(const std::string& path) -> PrototypeStore;
 
-    auto gestures() const -> const std::vector<GesturePrototypeSet>&;
-    auto gesture_count() const -> std::size_t;
-    auto sample_count() const -> std::size_t;
-    auto embedding_dim() const -> std::uint32_t;
-    auto gesture_name(std::uint32_t gesture_id) const -> const char*;
+    [[nodiscard]] auto gestures() const -> const std::vector<GesturePrototypeSet>&;
+    [[nodiscard]] auto gesture_count() const -> std::size_t;
+    [[nodiscard]] auto sample_count() const -> std::size_t;
+    [[nodiscard]] auto embedding_dim() const -> std::uint32_t;
+    [[nodiscard]] auto gesture_name(std::uint32_t gesture_id) const -> const char*;
 
   private:
     std::vector<GesturePrototypeSet> gestures_;
@@ -54,14 +53,13 @@ namespace signlang::signlang_det {
 
     explicit DtwMatcher(float window_ratio);
 
-    auto match(const EncodedSequence& query, const PrototypeStore& store)
-      const -> std::vector<Candidate>;
+    [[nodiscard]] auto match(const EncodedSequence& query, const PrototypeStore& store) const -> std::vector<Candidate>;
 
   private:
-    auto compute_distance(const EncodedSequence& query, const EncodedSequence& sample) const -> float;
-    auto compute_frame_distance(const std::vector<float>& query_frame,
-                                const std::vector<float>& sample_frame) const -> float;
-    auto compute_window(std::uint32_t query_length, std::uint32_t sample_length) const -> std::uint32_t;
+    [[nodiscard]] auto compute_distance(const EncodedSequence& query, const EncodedSequence& sample) const -> float;
+    [[nodiscard]] static auto compute_frame_distance(const std::vector<float>& query_frame,
+                                                     const std::vector<float>& sample_frame) -> float;
+    [[nodiscard]] auto compute_window(std::uint32_t query_length, std::uint32_t sample_length) const -> std::uint32_t;
 
     float window_ratio_;
   };
@@ -77,9 +75,9 @@ namespace signlang::signlang_det {
 
     ~BilstmEncoder();
 
-    auto encode(const std::vector<FeatureVector>& sequence) -> EncodedSequence;
-    auto sequence_length() const -> std::uint32_t;
-    auto embedding_dim() const -> std::uint32_t;
+    [[nodiscard]] auto encode(const std::vector<FeatureVector>& sequence) -> EncodedSequence;
+    [[nodiscard]] auto sequence_length() const -> std::uint32_t;
+    [[nodiscard]] auto embedding_dim() const -> std::uint32_t;
 
   private:
     void load_model(const std::string& model_path, rknn_core_mask npu_core);
@@ -108,11 +106,8 @@ namespace signlang::signlang_det {
       std::vector<DtwMatcher::Candidate> candidates;
     };
 
-    SignlangModel(const std::string& model_path,
-                  const std::string& prototypes_path,
-                  rknn_core_mask npu_core,
-                  float motion_weight = 0.0F,
-                  float dtw_window_ratio = 0.5F);
+    SignlangModel(const std::string& model_path, const std::string& prototypes_path, rknn_core_mask npu_core,
+                  float motion_weight = 0.0F, float dtw_window_ratio = 0.5F);
 
     SignlangModel(const SignlangModel&) = delete;
     auto operator=(const SignlangModel&) -> SignlangModel& = delete;
@@ -121,9 +116,12 @@ namespace signlang::signlang_det {
 
     ~SignlangModel();
 
-    auto infer(const std::vector<FeatureVector>& sequence) -> InferenceResult;
-    auto get_gesture_name(std::uint32_t gesture_id) const -> const char*;
-    auto expected_sequence_length() const -> std::uint32_t;
+    [[nodiscard]] auto infer(const std::vector<FeatureVector>& sequence) -> InferenceResult;
+    [[nodiscard]] auto get_gesture_name(std::uint32_t gesture_id) const -> const char*;
+    [[nodiscard]] auto expected_sequence_length() const -> std::uint32_t;
+    void reload_prototypes(const std::string& prototypes_path);
+    [[nodiscard]] auto loaded_gesture_count() const -> std::size_t;
+    [[nodiscard]] auto loaded_sample_count() const -> std::size_t;
 
   private:
     std::unique_ptr<BilstmEncoder> encoder_;

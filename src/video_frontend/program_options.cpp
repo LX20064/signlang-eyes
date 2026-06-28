@@ -3,7 +3,6 @@
 #include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
-#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -42,11 +41,13 @@ namespace signlang::video_frontend {
     options.add_options()("d,device", "V4L2 camera device name", cxxopts::value<std::string>())(
         "s,service", "iceoryx2 publish-subscribe service name", cxxopts::value<std::string>())(
         "capture-width", "Requested camera capture width in pixels", cxxopts::value<std::uint32_t>())(
-        "capture-height", "Requested camera capture height in pixels", cxxopts::value<std::uint32_t>())(
-        "fps", "Requested camera frame rate",
-        cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultFps)))(
+        "capture-height", "Requested camera capture height in pixels",
+        cxxopts::value<std::uint32_t>())("fps", "Requested camera frame rate",
+                                         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultFps)))(
         "output-width", "Published output width in pixels", cxxopts::value<std::uint32_t>())(
-        "output-height", "Published output height in pixels", cxxopts::value<std::uint32_t>())("h,help", "Print usage");
+        "output-height", "Published output height in pixels", cxxopts::value<std::uint32_t>())(
+        "mirror-output", "Horizontally mirror the published RGB output frame",
+        cxxopts::value<bool>()->default_value("false")->implicit_value("true"))("h,help", "Print usage");
     signlang::logging::add_cli_options(options);
 
     const auto parsed_options = options.parse(argc, argv);
@@ -81,6 +82,7 @@ namespace signlang::video_frontend {
         .capture_format = capture_format,
         .output_format = output_format,
         .fps = fps,
+        .mirror_output = parsed_options["mirror-output"].as<bool>(),
         .logging = signlang::logging::parse_cli_options(parsed_options),
     }};
   }

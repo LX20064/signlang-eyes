@@ -2,15 +2,19 @@
 
 ## Overview
 
-The **speech_asr** module performs real-time speech-to-text recognition using an OpenAI Whisper base model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding-window log-Mel spectrogram pipeline, runs encoder-decoder inference, and publishes transcription results. Supports English and Chinese languages with configurable state-based enable/disable control.
+The **speech_asr** module performs real-time speech-to-text recognition using an OpenAI Whisper base encoder-decoder model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding-window log-Mel spectrogram pipeline, runs encoder-decoder inference, and publishes transcription results. Supports English and Chinese languages.
 
 - **Executable**: `speech_asr` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (subscriber + publisher) + Event/Blackboard (state control)
+- **IPC Pattern**: Publish-Subscribe (audio subscriber + result publisher)
 - **Input**: `signlang::audio_frontend::AudioFrame` from iceoryx2
 - **Output**: `signlang::speech_asr::SpeechAsrResult` on iceoryx2
-- **Model**: Whisper base (encoder + decoder, RKNN-accelerated)
+- **Model**: Whisper base (encoder + decoder, 15s window, RKNN-accelerated)
 
 ## Command-Line Parameters
+
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
 
 ### IPC (Required)
 
@@ -18,13 +22,6 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 |-----------|-------------|
 | `--input-service` / `-i` | iceoryx2 audio input publish-subscribe service name |
 | `--output-service` / `-o` | iceoryx2 ASR result output service name |
-
-### State Gate (Optional)
-
-| Parameter | Description |
-|-----------|-------------|
-| `--state-event-service` | iceoryx2 event service name for global app state change notifications |
-| `--state-blackboard-service` | iceoryx2 blackboard service name for global app state storage |
 
 ### Model Paths
 
@@ -59,12 +56,14 @@ The **speech_asr** module performs real-time speech-to-text recognition using an
 
 ### Signal Processing Pipeline
 
-1. **Reflect Padding**: ±200 samples at each edge of the audio window
-2. **STFT**: 400-point FFT with Hann window, 160-sample hop length → 201 frequency bins
-3. **Mel Filtering**: 80-bin Mel filterbank maps 201-bin power spectra → Mel scale
+1. **Reflect Padding**: ±200 samples at each edge of the audio window (prevents edge artifacts)
+2. **STFT**: 400-point FFT with Hann window, 160-sample hop length → 201 frequency bins (FFTW3f)
+3. **Mel Filtering**: 80-bin Mel filterbank maps 201-bin power spectra to perceptual Mel scale
 4. **Log Compression & Normalization**: `log10(mel_value)`, threshold at max − 8 dB, scale to [−1, 1]
-5. **Encoder**: Single-pass encoding of the Mel spectrogram → encoded feature vector
-6. **Decoder**: Autoregressive token generation using prompt tokens `<|startoftranscript|> <language> <|transcribe|> <|notimestamps|>`, terminates on `<|endoftext|>` or max steps
+5. **Encoder**: Single-pass RKNN encoding of the Mel spectrogram → fixed-length feature vector
+6. **Decoder**: Autoregressive token generation with prompt `<|startoftranscript|> <language> <|transcribe|> <|notimestamps|>`, terminates on `<|endoftext|>` or max steps
+
+**Window dimensions**: 15s @ 16kHz = 240,000 samples → 80×1500 Mel spectrogram
 
 ### Thread Architecture
 
@@ -78,14 +77,6 @@ The module uses iceoryx2 `Node::wait()` for event-driven audio frame reception:
 - Zero CPU usage while waiting for frames
 - 5ms timeout for responsive shutdown
 - Replaces legacy polling loops for better power efficiency
-
-### State Control
-
-When both state gate services are provided, the module reads the current blackboard state at startup and uses the iceoryx2 Event + Blackboard pattern for enable/disable control:
-- When **disabled**: Polls for state changes and sleeps briefly between checks
-- When **enabled**: Non-blocking event check before each inference cycle
-- Without state gate services: Always enabled
-- Language is set at startup via `--language` flag
 
 ### ASR Window Strategy
 
@@ -136,7 +127,7 @@ WhisperModel
 ### Basic Usage (English)
 
 ```bash
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en
@@ -145,7 +136,7 @@ WhisperModel
 ### Chinese Recognition
 
 ```bash
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language zh \
@@ -153,23 +144,11 @@ WhisperModel
     --overlap 0.2
 ```
 
-### With State Control
-
-```bash
-./speech_asr \
-    --input-service audio_capture \
-    --output-service speech_asr_result \
-    --state-event-service app_state_event \
-    --state-blackboard-service app_state_blackboard \
-    --language zh \
-    --npu-core 1
-```
-
 ### Multi-Core NPU
 
 ```bash
 # Use NPU cores 0 and 1
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en \
@@ -180,7 +159,7 @@ WhisperModel
 
 ```bash
 # Encoder on core 0, decoder on core 1
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture \
     --output-service speech_asr_result \
     --language en \
@@ -195,7 +174,7 @@ WhisperModel
 | `main.cpp` | Entry point; dual-thread orchestration (receiver + inference) |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `whisper_model.{cpp,hpp}` | Whisper encoder/decoder RKNN model wrapper |
-| `iceoryx_gateway.{cpp,hpp}` | iceoryx2 subscriber, publisher, state control |
+| `iceoryx_gateway.{cpp,hpp}` | iceoryx2 subscriber and publisher |
 | `speech_asr_result.{cpp,hpp}` | `SpeechAsrResult` IPC message definition |
 
 Shared with other modules:
@@ -223,10 +202,11 @@ struct SpeechAsrResult {
 ## Performance Characteristics
 
 - **Inference time**: ~1.5-2.5s for 15s window on single NPU core (RK3588)
-- **Throughput**: Real-time factor ~0.15-0.20 (processes 15s in 2-3s)
-- **Memory**: ~150MB model footprint (encoder + decoder)
-- **CPU usage**: <5% on single core (event-driven, no polling)
-- **Latency**: ~2-3s glass-to-glass (15s window with 20% overlap)
+- **Throughput**: Real-time factor ~0.15-0.20 (processes 15s in 1.5-2.5s)
+- **Memory**: ~150MB model footprint (encoder + decoder RKNN models)
+- **CPU usage**: <5% on single core (event-driven, no polling; Cortex-A76 @ 2.4GHz)
+- **Latency**: ~2-3s glass-to-glass (15s window with 20% overlap = 12s hop)
+- **STFT computation**: ~50-100ms for 240k samples via FFTW3f
 
 ## Vocabulary Files
 

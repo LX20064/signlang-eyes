@@ -2,12 +2,11 @@
 #define SIGNLANG_EYES_SIGNLANG_DET_ICEORYX_GATEWAY_HPP
 
 #include "handpose_det/handpose_frame.hpp"
+#include "prototype_control.hpp"
 #include "signlang_result.hpp"
 
 #include "iox2/iceoryx2.hpp"
-#include "state_machine/app_state.hpp"
 
-#include <cstdint>
 #include <string>
 
 namespace signlang::signlang_det {
@@ -24,7 +23,7 @@ namespace signlang::signlang_det {
     template <typename Handler>
     auto receive_latest(Handler&& handler) -> bool;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -49,50 +48,49 @@ namespace signlang::signlang_det {
     auto operator=(IpcSignlangPublisher&&) -> IpcSignlangPublisher& = delete;
 
     void publish(const SignlangResult& result);
+    [[nodiscard]] auto has_subscribers() const -> bool;
 
   private:
+    using ResultService = iox2::PortFactoryPublishSubscribe<iox2::ServiceType::Ipc, SignlangResult, void>;
+
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
-    static auto create_publisher(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
+    static auto create_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
+        -> ResultService;
+    static auto create_publisher(const ResultService& service)
         -> iox2::Publisher<iox2::ServiceType::Ipc, SignlangResult, void>;
 
     iox2::Node<iox2::ServiceType::Ipc> node_;
+    ResultService service_;
     iox2::Publisher<iox2::ServiceType::Ipc, SignlangResult, void> publisher_;
     std::uint64_t sequence_number_{0};
   };
 
-  /// Event-driven sign language detection state monitor
-  class IpcSignlangDetStateMonitor {
+  class IpcPrototypeControlServer {
   public:
-    IpcSignlangDetStateMonitor(const std::string& event_service_name, const std::string& blackboard_service_name);
+    explicit IpcPrototypeControlServer(const std::string& service_name);
 
-    IpcSignlangDetStateMonitor(const IpcSignlangDetStateMonitor&) = delete;
-    auto operator=(const IpcSignlangDetStateMonitor&) -> IpcSignlangDetStateMonitor& = delete;
-    IpcSignlangDetStateMonitor(IpcSignlangDetStateMonitor&&) = delete;
-    auto operator=(IpcSignlangDetStateMonitor&&) -> IpcSignlangDetStateMonitor& = delete;
+    IpcPrototypeControlServer(const IpcPrototypeControlServer&) = delete;
+    auto operator=(const IpcPrototypeControlServer&) -> IpcPrototypeControlServer& = delete;
+    IpcPrototypeControlServer(IpcPrototypeControlServer&&) = delete;
+    auto operator=(IpcPrototypeControlServer&&) -> IpcPrototypeControlServer& = delete;
 
-    auto is_enabled() const -> bool;
-
-    void wait_for_state_change_blocking();
-
-    auto try_wait_for_state_change() -> bool;
+    template <typename Handler>
+    void process_pending_requests(Handler&& handler);
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
-    static auto create_listener(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
-        -> iox2::Listener<iox2::ServiceType::Ipc>;
-    static auto open_blackboard_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
-        -> iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>;
-    static auto create_reader(
-        const iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>& service)
-        -> iox2::Reader<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey>;
-
-    auto read_state_from_blackboard() -> signlang::state_machine::AppState;
+    static auto create_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)
+        -> iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void,
+                                            PrototypeControlResponse, void>;
+    static auto create_server(const iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest,
+                                                                     void, PrototypeControlResponse, void>& service)
+        -> iox2::Server<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse, void>;
 
     iox2::Node<iox2::ServiceType::Ipc> node_;
-    iox2::Listener<iox2::ServiceType::Ipc> listener_;
-    iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey> blackboard_service_;
-    iox2::Reader<iox2::ServiceType::Ipc, signlang::state_machine::AppStateKey> reader_;
-    signlang::state_machine::AppState cached_state_;
+    iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse,
+                                     void>
+        service_;
+    iox2::Server<iox2::ServiceType::Ipc, PrototypeControlRequest, void, PrototypeControlResponse, void> server_;
   };
 
   template <typename Handler>
@@ -123,6 +121,29 @@ namespace signlang::signlang_det {
 
     handler(metadata, payload.data(), metadata.detection_count);
     return true;
+  }
+
+  template <typename Handler>
+  void IpcPrototypeControlServer::process_pending_requests(Handler&& handler) {
+    auto receive_result = server_.receive();
+    if (!receive_result.has_value()) {
+      throw std::runtime_error("Failed to receive signlang prototype control request");
+    }
+
+    auto active_request = std::move(receive_result.value());
+    while (active_request.has_value()) {
+      auto response = handler(active_request.value().payload());
+      const auto send_result = active_request.value().send_copy(response);
+      if (!send_result.has_value()) {
+        throw std::runtime_error("Failed to send signlang prototype control response");
+      }
+
+      receive_result = server_.receive();
+      if (!receive_result.has_value()) {
+        throw std::runtime_error("Failed to receive signlang prototype control request");
+      }
+      active_request = std::move(receive_result.value());
+    }
   }
 
 } // namespace signlang::signlang_det

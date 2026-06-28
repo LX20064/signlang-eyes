@@ -4,7 +4,6 @@
 #include "common/logging.hpp"
 #include "video_format.hpp"
 
-#include <cstdint>
 #include <string>
 #include <variant>
 
@@ -16,6 +15,7 @@ namespace signlang::video_frontend {
     VideoFormatRequest capture_format;
     VideoFormatRequest output_format;
     std::uint32_t fps;
+    bool mirror_output;
     signlang::logging::Options logging;
   };
 

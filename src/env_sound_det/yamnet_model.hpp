@@ -7,7 +7,6 @@
 #include "rknn_api.h"
 
 #include <array>
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -36,7 +35,7 @@ namespace signlang::env_sound_det {
     YamnetModel(YamnetModel&&) = delete;
     auto operator=(YamnetModel&&) -> YamnetModel& = delete;
 
-    auto infer(const AudioWindow& audio_window) -> YamnetInferenceResult;
+    [[nodiscard]] auto infer(const AudioWindow& audio_window) -> YamnetInferenceResult;
 
   private:
     void query_model_io();
@@ -44,7 +43,7 @@ namespace signlang::env_sound_det {
     void load_labels(const std::string& class_map_path);
     auto prepare_input(const AudioWindow& audio_window) -> const float*;
     auto post_process_scores(const float* scores) -> std::uint32_t;
-    auto class_label(std::uint32_t class_index) const -> const std::string&;
+    [[nodiscard]] auto class_label(std::uint32_t class_index) const -> const std::string&;
 
     rknn_context context_;
     rknn_input_output_num io_num_;
@@ -55,7 +54,7 @@ namespace signlang::env_sound_det {
     std::vector<rknn_output> outputs_;
     std::vector<std::string> labels_;
     std::vector<float> mean_scores_;
-    std::array<EnvSoundClassScore, kMaxDetectedClasses> detected_classes_;
+    std::array<EnvSoundClassScore, kMaxDetectedClasses> detected_classes_{};
     std::uint32_t scores_output_index_;
     std::uint32_t score_frame_count_;
     float score_threshold_;

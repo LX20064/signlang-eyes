@@ -2,15 +2,19 @@
 
 ## Overview
 
-The **env_sound_det** module performs real-time environmental sound classification using Google's YAMNet (MobileNetV1-based) model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding window, runs inference, and requests alert-state changes for configured horn/dangerous-sound labels.
+The **env_sound_det** module performs real-time environmental sound classification using Google's YAMNet (MobileNetV1-based) model running on the RKNN NPU. It subscribes to audio frames, processes them through a sliding window, runs inference, and requests alert-state changes via the state control service when configured dangerous-sound labels are detected.
 
 - **Executable**: `env_sound_det` (installed under `bin/`)
-- **IPC Pattern**: Publish-Subscribe (audio subscriber) + Request-Response (state control)
+- **IPC Pattern**: Publish-Subscribe (audio subscriber) + Request-Response (state control client)
 - **Input**: `signlang::audio_frontend::AudioFrame` from iceoryx2
-- **Output**: `DangerousSound` state-control requests when configured horn labels are detected
-- **Model**: YAMNet (521-class environmental sound classifier, RKNN-accelerated)
+- **Output**: `DangerousSound` state-control requests when horn/siren detected
+- **Model**: YAMNet (521-class environmental sound classifier, 3s window, RKNN-accelerated)
 
 ## Command-Line Parameters
+
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
 
 ### IPC (Required)
 
@@ -46,18 +50,20 @@ The **env_sound_det** module performs real-time environmental sound classificati
 
 ### YAMNet Architecture
 
-- **Backbone**: MobileNetV1 with depthwise-separable convolutions
+- **Backbone**: MobileNetV1 with depthwise-separable convolutions (lightweight CNN)
 - **Input**: `[1, 48000]` — 3 seconds of audio @ 16 kHz mono
-- **Output**: `[N_frames × 521]` — per-frame class scores (N_frames varies with model)
-- **Post-processing**: Average scores across all output frames, filter by threshold
+- **Output**: `[N_frames × 521]` — per-frame class scores (N_frames varies with model variant)
+- **Post-processing**: Average scores across all output frames, filter by `score_threshold`
+- **Classes**: 521 AudioSet ontology classes (speech, music, vehicle sounds, alarms, animals, etc.)
 
 ### Threshold-Based Filtering
 
 Instead of selecting a fixed top-K, the module uses **threshold-based filtering**:
-- All classes with `score >= score_threshold` are detected (up to 32 max)
-- Provides flexible detection: can find 0, 1, or many dangerous sounds
+- All classes with `score >= score_threshold` are detected (up to 32 max per window)
+- Provides flexible detection: can find 0, 1, or many dangerous sounds simultaneously
 - More accurate for multi-class scenarios (e.g., car horn + siren simultaneously)
 - Threshold is configurable per deployment scenario (default 0.3)
+- Eliminates false negatives from arbitrary top-K cutoff in multi-sound environments
 
 ### Inference Pipeline
 
@@ -78,12 +84,14 @@ The module uses iceoryx2 `Node::wait()` for event-driven audio frame reception:
 
 ### State Control (Dangerous Sound Detection)
 
-When the module detects one of the configured horn labels in the filtered classes, it requests a `DangerousSound` state change via the iceoryx2 Request-Response control service.
+When the module detects one of the configured horn labels in the filtered classes, it sends a `StateControlRequest` with `EnterSpecial(DangerousSound, timeout_ms=15000)` via the iceoryx2 Request-Response control service.
 
-**Dangerous sound labels:**
-- `Air horn, truck horn`
-- `Vehicle horn, car horn, honking`
-- `Train horn`
+**Dangerous sound labels (hardcoded):**
+- `Air horn, truck horn` (class ID 312)
+- `Vehicle horn, car horn, honking` (class ID 302)
+- `Train horn` (class ID 325)
+
+The state machine receives this request and transitions to the `DangerousSound` special state, which auto-expires after 15 seconds.
 
 ### YAMNet Window Strategy
 
@@ -139,7 +147,7 @@ YamnetModel (RKNN NPU)
 ### Basic Usage
 
 ```bash
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control
 ```
@@ -148,7 +156,7 @@ YamnetModel (RKNN NPU)
 
 ```bash
 # More sensitive detection (lower threshold)
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --score-threshold 0.2
@@ -158,7 +166,7 @@ YamnetModel (RKNN NPU)
 
 ```bash
 # 5-second detection window
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --window-ms 5000 \
@@ -168,7 +176,7 @@ YamnetModel (RKNN NPU)
 ### Specific NPU Core
 
 ```bash
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control \
     --npu-core 0 \
@@ -213,10 +221,10 @@ struct EnvSoundClassScore {
 
 - **Inference time**: ~20-40ms for 3s window on single NPU core (RK3588)
 - **Throughput**: Real-time factor ~0.01-0.02 (processes 3s in 20-40ms)
-- **Memory**: ~8MB model footprint
-- **CPU usage**: <3% on single core (event-driven, no polling)
-- **Latency**: ~3s glass-to-glass (3s window with 20% overlap)
-- **Detection flexibility**: 0-32 classes per window (threshold-based)
+- **Memory**: ~8MB model footprint (MobileNetV1 RKNN model)
+- **CPU usage**: <3% on single core (event-driven, no polling; Cortex-A76 @ 2.4GHz)
+- **Latency**: ~3s glass-to-glass (3s window with 20% overlap = 2.4s hop)
+- **Detection flexibility**: 0-32 classes per window (threshold-based, no fixed top-K)
 
 ## YAMNet Class Examples
 
@@ -257,14 +265,21 @@ iox2-list
 
 Increase the score threshold:
 ```bash
-./env_sound_det --score-threshold 0.4
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --score-threshold 0.4
 ```
 
 ### Missed Detections
 
 Lower the score threshold or increase window size:
 ```bash
-./env_sound_det --score-threshold 0.2 --window-ms 5000
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --score-threshold 0.2 \
+    --window-ms 5000
 ```
 
 ### RKNN Initialization Failed

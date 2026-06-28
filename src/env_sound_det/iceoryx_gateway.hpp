@@ -7,7 +7,6 @@
 #include "iox2/iceoryx2.hpp"
 #include "state_machine/state_control.hpp"
 
-#include <cstdint>
 #include <string>
 
 namespace signlang::env_sound_det {
@@ -30,7 +29,7 @@ namespace signlang::env_sound_det {
 
     auto receive_available(AudioRingBuffer& ring_buffer) -> AudioReceiveStats;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -52,14 +51,14 @@ namespace signlang::env_sound_det {
     auto operator=(IpcStateControlClient&&) -> IpcStateControlClient& = delete;
 
     void enter_dangerous_sound_state() const;
+    [[nodiscard]] auto has_server() const -> bool;
 
   private:
     using StateControlService =
         iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, signlang::state_machine::StateControlRequest, void,
                                          signlang::state_machine::StateControlResponse, void>;
-    using StateControlClient =
-        iox2::Client<iox2::ServiceType::Ipc, signlang::state_machine::StateControlRequest, void,
-                     signlang::state_machine::StateControlResponse, void>;
+    using StateControlClient = iox2::Client<iox2::ServiceType::Ipc, signlang::state_machine::StateControlRequest, void,
+                                            signlang::state_machine::StateControlResponse, void>;
 
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
     static auto create_service(const iox2::Node<iox2::ServiceType::Ipc>& node, const std::string& service_name)

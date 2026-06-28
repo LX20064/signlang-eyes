@@ -1,6 +1,6 @@
 # signlang-eyes
 
-Sign language recognition and environmental awareness system for the hearing-impaired, providing real-time sign language translation, speech recognition, and hazardous sound detection.
+Real-time sign language recognition and environmental awareness system for the hearing-impaired, providing dual-hand sign language translation, speech recognition, and hazardous sound detection with NPU-accelerated inference.
 
 ## System Architecture
 
@@ -36,18 +36,25 @@ Modular architecture using iceoryx2 zero-copy IPC for high-performance inter-pro
 │  signlang_det    │─────────────┘
 │  (DTW matching)  │
 └──────────────────┘
+        ▲
+        │
+┌──────────────────┐
+│ signlang_manager │
+│ (BLE + DB mgmt)  │
+└──────────────────┘
 ```
 
 ### Core Modules
 
-- **audio_frontend**: ALSA audio capture with multi-channel source localization and adaptive resampling
-- **video_frontend**: V4L2 camera capture with RGA hardware-accelerated YUYV→RGB24 conversion and scaling
-- **speech_asr**: Whisper speech recognition with sliding window for Chinese/English
-- **env_sound_det**: YAMNet environmental sound detection with threshold-based hazardous sound alerts
-- **handpose_det**: MediaPipe palm detection and hand landmark recognition with fixed hand-slot output
-- **signlang_det**: Sign language recognition using DTW temporal matching
-- **state_machine**: Global state coordinator managing module interactions
-- **launcher**: Unified launcher loading all modules from TOML configuration
+- **audio_frontend**: ALSA audio capture with TDOA-based sound source localization and adaptive resampling
+- **video_frontend**: V4L2 camera capture with RGA hardware-accelerated format conversion (YUYV/MJPEG→RGB24) and scaling
+- **speech_asr**: Whisper base encoder-decoder speech recognition with 15s sliding window for Chinese/English
+- **env_sound_det**: YAMNet (MobileNetV1) environmental sound classification with threshold-based dangerous sound alerts
+- **handpose_det**: MediaPipe dual-model pipeline (palm detector + hand landmarks) with single-hand or dual-hand output
+- **signlang_det**: Dual-hand sign language recognition using BiLSTM encoder + DTW matching against SQLite prototype database
+- **signlang_manager**: BLE GATT access point for handpose streaming and runtime gesture prototype database management
+- **state_machine**: Global state coordinator managing module lifecycle via Event + Blackboard + Request-Response IPC
+- **launcher**: Unified process orchestrator loading all modules from TOML configuration with health monitoring
 
 ## Application States
 
@@ -60,46 +67,59 @@ Default state is `Normal`. ASR and sign language modules remain disabled in this
 
 ## Technical Features
 
-- **Zero-copy IPC**: iceoryx2 shared memory with no serialization overhead
-- **Event-driven**: Node::wait() replaces polling for zero CPU usage when idle
-- **NPU acceleration**: RKNN inference engine with multi-core parallelism
-- **Hardware acceleration**: RGA hardware-accelerated video format conversion and scaling
-- **Sliding windows**: Audio and video temporal analysis with overlapping windows
-- **Threshold filtering**: env_sound_det supports flexible threshold filtering, detecting up to 32 classes
+- **Zero-copy IPC**: iceoryx2 shared memory eliminates serialization overhead for audio/video streams
+- **Event-driven architecture**: `Node::wait()` replaces polling for zero CPU usage when idle
+- **NPU acceleration**: RKNN inference engine with RK3588 multi-core parallelism and configurable core affinity
+- **Hardware acceleration**: RGA (Raster Graphic Acceleration) unit provides ~50× speedup for YUYV→RGB24 conversion
+- **Sliding window processing**: Overlapping temporal analysis for audio (15s/3s) and video (30 frames) streams
+- **Threshold-based detection**: env_sound_det uses flexible score filtering (0-32 classes) instead of fixed top-K
+- **BiLSTM + DTW hybrid**: Sign language recognition combines neural encoding with dynamic time warping for speed invariance
+- **SQLite prototype storage**: Runtime vocabulary boundary decoupled from BiLSTM encoder model
+- **BLE management API**: Runtime handpose streaming and gesture add/list/delete over a custom GATT service
 
 ## Build
 
 ### Dependencies
 
 - CMake 3.20+
-- C++20 compiler (aarch64/arm64 target platform)
-- iceoryx2 (zero-copy IPC)
-- RKNN Runtime (Rockchip NPU)
-- ALSA (audio)
-- V4L2 (video)
-- spdlog (logging)
-- FFTW3f (audio FFT)
-- libjpeg-turbo (JPEG encoding)
-- librga (RGA hardware acceleration)
-- cxxopts, toml++ (CLI and config parsing)
+- C++20 compiler (GCC 10+ or Clang 12+)
+- Target platform: aarch64/arm64 (RK3588 or compatible)
+- iceoryx2 (zero-copy IPC framework)
+- RKNN Runtime 2.0+ (Rockchip NPU inference)
+- ALSA (libasound, audio capture)
+- V4L2 (Video4Linux2, camera capture)
+- spdlog 1.17+ (logging with rotation)
+- FFTW3f (FFT for audio spectrogram and cross-correlation)
+- libjpeg-turbo (MJPEG decode)
+- librga 2.0+ (Rockchip RGA hardware acceleration)
+- SQLiteCpp (sign language prototype database)
+- cxxopts, toml++ (CLI and config parsing, header-only)
+- GLib/GIO + BlueZ runtime (BLE GATT service for signlang_manager)
 
 ### Cross-compilation
 
+Requires a cross-compilation toolchain targeting aarch64. Example using Buildroot toolchain:
+
 ```bash
-mkdir build && cd build
-cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/aarch64-buildroot.cmake \
-      -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-make install DESTDIR=../install
+cmake -S . -B build-aarch64 \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-buildroot.cmake \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build build-aarch64 -j$(nproc)
+cmake --install build-aarch64 --prefix install
 ```
 
-### Native build (aarch64 device)
+### Native build (on aarch64 device)
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j$(nproc)
 cmake --install build --prefix install
 ```
+
+The installed binaries resolve relative runtime paths from the installation root, not from the shell's current working
+directory. `launcher` is installed at the root, and module executables installed under `bin/` automatically use the
+parent directory as their runtime root. Defaults such as `conf/conf.toml`, `models/...`, and `log/...` therefore work
+when launching from any directory.
 
 ### Installation Directory Layout
 
@@ -113,6 +133,7 @@ install/
 │   ├── speech_asr
 │   ├── env_sound_det
 │   ├── handpose_det
+│   ├── signlang_manager
 │   └── signlang_det
 ├── lib/              # Shared libraries
 │   ├── libiceoryx2_cxx.so
@@ -120,23 +141,28 @@ install/
 │   ├── librknnrt.so
 │   ├── libspdlog.so
 │   └── librga.so
+├── log/              # Runtime logs, created on first launcher run
 ├── conf/             # Configuration files
-│   └── conf.toml
+│   ├── conf.toml
+│   └── prototypes.sqlite
 └── models/           # AI model files
     ├── whisper/
     ├── yamnet/
     ├── mediapipe/
-    └── signlang/
+    └── bilstm/
 ```
 
 ## Configuration
 
-Main configuration file `conf/conf.toml`:
+Main configuration file `conf/conf.toml` (all keys optional, fallback to module defaults):
 
 ```toml
 [logging]
 rotate_size = 1048576      # Log file size (1MB)
-retain_files = 100         # Number of retained files
+retain_files = 100         # Number of retained log files
+
+[state_machine]
+initial_state = "normal"   # normal, asr, sign_language_chat, sign_language_ai
 
 [audio_frontend]
 device = "hw:2,0"          # ALSA device name
@@ -145,12 +171,13 @@ capture_channels = 2       # Channel count
 
 [video_frontend]
 device = "/dev/video21"    # V4L2 device path
-output_width = 640         # Output width
-output_height = 480        # Output height
+output_width = 640         # Output width in pixels
+output_height = 480        # Output height in pixels
+# mirror_output = false    # Horizontally mirror published video
 
 [speech_asr]
 language = "zh"            # Recognition language: "zh" or "en"
-npu_core = "1"             # NPU core: "0", "1", "2", "0_1", "0_1_2"
+npu_core = "1"             # NPU core: "0", "1", "2", "0_1", "0_1_2", "auto", "all"
 
 [env_sound_det]
 npu_core = "0"
@@ -158,57 +185,104 @@ score_threshold = 0.3      # Detection threshold (0.0-1.0)
 
 [handpose_det]
 npu_core = "2"
-confidence = 0.5           # Detection confidence threshold
+confidence = 0.5           # Detection confidence threshold (0.0-1.0)
+single_hand = false        # true for one hand, false for two hands
 
 [signlang_det]
 npu_core = "0"
+model = "models/bilstm/biltsm.rknn"
+prototypes = "conf/prototypes.sqlite"
 sequence_length = 30       # Sliding window frame count
-confidence_threshold = 0.6 # Recognition confidence threshold
+confidence_threshold = 0.6 # Recognition confidence threshold (0.0-1.0)
+
+[signlang_manager]
+npu_core = "0"
+bluetooth_name = "SignLang Eyes"
+model = "models/bilstm/biltsm.rknn"
+prototypes = "conf/prototypes.sqlite"
+stream_fps = 30
 ```
+
+IPC service names are **hardcoded** in the launcher and cannot be configured via TOML.
+
+Relative paths in the TOML are resolved from the installation root when launched through `launcher`.
 
 ## Running
 
 ### Launch all modules
 
 ```bash
-cd install
-./launcher --config conf/conf.toml
+install/launcher --config conf/conf.toml
 ```
 
 Or use default configuration:
 
 ```bash
-./launcher
+install/launcher
 ```
+
+The launcher spawns all modules in dependency order, monitors their health, and performs coordinated shutdown on SIGINT/SIGTERM or child failure.
 
 ### Run individual modules
 
 ```bash
 # State machine
-./bin/state_machine
+install/bin/state_machine \
+    --state-event-service app_state_event \
+    --state-blackboard-service app_state_blackboard \
+    --state-control-service app_state_control \
+    --initial-state normal
 
 # Audio capture
-./bin/audio_frontend --device hw:2,0 --capture-rate 16000
+install/bin/audio_frontend \
+    --device hw:2,0 \
+    --service audio_capture \
+    --capture-rate 16000
 
 # Video capture
-./bin/video_frontend --device /dev/video21 --width 640 --height 480
+install/bin/video_frontend \
+    --device /dev/video21 \
+    --service video_capture \
+    --output-width 640 \
+    --output-height 480
 
 # Speech recognition
-./bin/speech_asr --language zh --npu-core 1
+install/bin/speech_asr \
+    --input-service audio_capture \
+    --output-service speech_asr_result \
+    --language zh \
+    --npu-core 1
 
 # Environmental sound detection
-./bin/env_sound_det --npu-core 0 --score-threshold 0.3
+install/bin/env_sound_det \
+    --input-service audio_capture \
+    --state-control-service app_state_control \
+    --npu-core 0 \
+    --score-threshold 0.3
 
 # Hand pose detection
-./bin/handpose_det --npu-core 2 --confidence 0.5
+install/bin/handpose_det \
+    --input-service video_capture \
+    --output-service handpose_result \
+    --npu-core 2 \
+    --confidence 0.5
+
+# BLE sign language manager
+install/bin/signlang_manager \
+    --input-service handpose_result \
+    --signlang-control-service signlang_prototype_control
 
 # Sign language recognition
-./bin/signlang_det --npu-core 0 --sequence-length 30
+install/bin/signlang_det \
+    --input-service handpose_result \
+    --output-service signlang_result \
+    --npu-core 0 \
+    --sequence-length 30
 ```
 
 ## Logging
 
-Logs are automatically saved to the `logs/` directory:
+When launched through `launcher`, logs are automatically saved to the installation root's `log/` directory:
 - Single file size: 1MB (configurable)
 - Retained file count: 100 (configurable)
 - Format: `[timestamp] [level] [thread] message`
@@ -227,6 +301,7 @@ src/
 ├── env_sound_det/    Environmental sound detection module
 ├── handpose_det/     Hand pose detection module
 ├── signlang_det/     Sign language recognition module
+├── signlang_manager/ BLE handpose stream and gesture DB manager
 ├── state_machine/    State machine module
 └── launcher/         Launcher module
 third_party/          Third-party dependencies
@@ -247,13 +322,17 @@ Detailed documentation for each module:
 
 ## IPC Services
 
-Inter-module communication via iceoryx2 services:
-- `audio_capture`: Audio frame data stream
-- `video_capture`: Video frame data stream
-- `handpose_data`: Hand keypoint data stream
-- `app_state_event`: State change events
-- `app_state_blackboard`: State query service
-- `app_state_control`: State control requests
+Inter-module communication via iceoryx2 services (hardcoded names):
+- `audio_capture`: Audio frame data stream (PCM 16-bit, publish-subscribe)
+- `video_capture`: Video frame data stream (RGB24, publish-subscribe with user header)
+- `handpose_result`: Hand keypoint data stream (21 landmarks for one or two hands, publish-subscribe with user header)
+- `speech_asr_result`: Speech recognition transcription results (publish-subscribe)
+- `signlang_result`: Sign language recognition results (publish-subscribe)
+- `signlang_prototype_control`: Prototype reload/status control between signlang_manager and signlang_det (request-response)
+- `app_state_event`: State change event notifications (event notifier)
+- `app_state_blackboard`: Current application state storage (blackboard, single-entry)
+- `app_state_control`: State control requests (request-response)
+- `audio_source_localization`: Sound source channel proximity scores (blackboard, single-entry)
 
 ## License
 

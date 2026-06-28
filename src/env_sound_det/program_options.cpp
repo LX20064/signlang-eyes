@@ -3,7 +3,6 @@
 #include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -12,8 +11,6 @@ namespace signlang::env_sound_det {
 
     constexpr auto kDefaultModelPath = "models/yamnet/yamnet_3s.rknn";
     constexpr auto kDefaultClassMapPath = "models/yamnet/yamnet_class_map.txt";
-    constexpr std::uint32_t kMinWindowMs = 100;
-    constexpr std::uint32_t kMaxWindowMs = 60000;
     constexpr std::uint64_t kDefaultSubscriberBufferSize = 2;
 
     auto parse_npu_core_mask(const std::string& value) -> rknn_core_mask {
@@ -64,12 +61,11 @@ namespace signlang::env_sound_det {
         "Detect environmental sounds from an iceoryx2 audio stream with RKNN YAMNet and request alert states."};
 
     options.add_options()("i,input-service", "iceoryx2 audio input publish-subscribe service name",
-                          cxxopts::value<std::string>())(
-        "state-control-service", "iceoryx2 app state control request-response service name",
-        cxxopts::value<std::string>())("m,model", "YAMNet RKNN model path",
-                                       cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
-        "class-map", "YAMNet class map path",
-        cxxopts::value<std::string>()->default_value(kDefaultClassMapPath))(
+                          cxxopts::value<std::string>())("state-control-service",
+                                                         "iceoryx2 app state control request-response service name",
+                                                         cxxopts::value<std::string>())(
+        "m,model", "YAMNet RKNN model path", cxxopts::value<std::string>()->default_value(kDefaultModelPath))(
+        "class-map", "YAMNet class map path", cxxopts::value<std::string>()->default_value(kDefaultClassMapPath))(
         "w,window-ms", "Detection window length in milliseconds",
         cxxopts::value<std::uint32_t>()->default_value(std::to_string(kDefaultWindowMs)))(
         "overlap", "Overlap ratio between adjacent detection windows",
@@ -90,8 +86,7 @@ namespace signlang::env_sound_det {
     }
 
     if (parsed_options.count("input-service") == 0 || parsed_options.count("state-control-service") == 0) {
-      throw std::runtime_error(
-          "--input-service and --state-control-service are required.\n\n" + options.help());
+      throw std::runtime_error("--input-service and --state-control-service are required.\n\n" + options.help());
     }
 
     const auto window_ms = parsed_options["window-ms"].as<std::uint32_t>();

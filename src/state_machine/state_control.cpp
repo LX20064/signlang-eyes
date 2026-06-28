@@ -17,7 +17,7 @@ namespace signlang::state_machine {
 
   StateController::StateController(AppState initial_base_state) :
       base_state_{is_basic_app_state(initial_base_state) ? initial_base_state : AppState::Normal},
-      published_state_{base_state_}, special_state_expires_at_{} {}
+      published_state_{base_state_} {}
 
   auto StateController::current_base_state() const -> AppState { return base_state_; }
 

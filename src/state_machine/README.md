@@ -2,33 +2,39 @@
 
 ## Overview
 
-The **state_machine** module is the central application state controller for the sign language edge AI system. It manages the global application state (Normal, ASR, SignLanguageChat, SignLanguageAi, DangerousSound) and distributes state changes to all other modules via iceoryx2 Event + Blackboard notification. It also accepts state change requests from other modules via a Request-Response service, with special-state timeout handling.
+The **state_machine** module is the central application state controller for the sign language edge AI system. It manages the global application state (Normal, ASR, SignLanguageChat, SignLanguageAi, DangerousSound) and distributes state changes to all other modules via iceoryx2 Event + Blackboard pattern. It accepts state change requests from other modules via a Request-Response service, with special-state timeout handling.
 
 - **Executable**: `state_machine` (installed under `bin/`)
 - **IPC Pattern**: Event (state change notification) + Blackboard (state storage) + Request-Response (state control)
-- **Input**: `StateControlRequest` via iceoryx2 Request-Response
-- **Output**: `AppState` on Event + Blackboard services
+- **Input**: `StateControlRequest` via iceoryx2 Request-Response server
+- **Output**: `AppState` on Event notifier + Blackboard services
 
 ## Application States
 
 | State | Value | Type | Description |
 |-------|-------|------|-------------|
 | `Normal` | `0` | Base | Default idle state; ASR and sign-language inference modules remain disabled |
-| `Asr` | `1` | Base | Speech recognition mode; ASR module active |
-| `SignLanguageChat` | `2` | Base | Sign language chat mode; sign language recognition active |
-| `SignLanguageAi` | `3` | Base | Sign language AI interaction mode |
-| `DangerousSound` | `4` | Special | Alert state; triggered by env_sound_det on horn/siren detection. Auto-expires after timeout (default 15s) |
+| `Asr` | `1` | Base | Speech recognition mode; ASR module active, sign language modules disabled |
+| `SignLanguageChat` | `2` | Base | Sign language chat mode; sign language recognition active, ASR disabled |
+| `SignLanguageAi` | `3` | Base | Sign language AI interaction mode; sign language recognition active |
+| `DangerousSound` | `4` | Special | Alert state; triggered by env_sound_det on horn/siren detection; auto-expires after timeout (default 15s) |
 
 - **Base states**: Mutually exclusive; transitioning to a new base state replaces the current one
-- **Special states**: Overlay on top of base states; auto-expire after `timeout_ms`; the base state persists underneath
+- **Special states**: Overlay on top of base states; auto-expire after `timeout_ms`; the base state persists underneath and is restored on expiration
+- **State persistence**: Base state is never lost; special states are ephemeral overlays
 
 ## Command-Line Parameters
+
+Relative paths are resolved from the installation root. For installed module executables under `bin/`, the runtime root is the parent directory, so defaults like `models/…`, `conf/…`, and `log/…` do not depend on the shell current working directory.
+
+All module executables also accept `--log-file <path>` and `--log-rotate-size <bytes>`; the launcher supplies these automatically when it starts modules.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--state-event-service` | *(required)* | iceoryx2 event service name for app state change notifications |
 | `--state-blackboard-service` | *(required)* | iceoryx2 blackboard service name for app state storage |
 | `--state-control-service` | *(required)* | iceoryx2 request-response service name for state control commands |
+| `--initial-state` | `normal` | Initial base app state: `normal`, `asr`, `sign_language_chat`, or `sign_language_ai` |
 | `--help` / `-h` | — | Print usage |
 
 ## Technical Details
@@ -55,9 +61,16 @@ Other modules can send `StateControlRequest` messages with these commands:
 ### Main Control Loop (100ms cycle)
 
 1. Check if the current special state has expired (`expire_special_state()`)
-2. If expired, revert to the base state and publish the change
-3. Process pending state control requests from other modules
-4. Sleep for 100ms
+2. If expired, revert to the base state and publish the change via Event + Blackboard
+3. Process pending state control requests from the Request-Response server
+4. Send responses back to clients
+5. Sleep for 100ms (10 Hz control loop)
+
+**Characteristics:**
+- Fixed 10 Hz control frequency (100ms period)
+- Special state timeout precision: ±100ms (limited by control loop frequency)
+- Non-blocking request processing (handles multiple clients)
+- Event notification latency: <1ms
 
 ### IPC Integration
 
@@ -116,10 +129,11 @@ StateController
 
 ```bash
 # Start the state machine (typically first in the startup sequence)
-./state_machine \
+install/bin/state_machine \
     --state-event-service app_state_event \
     --state-blackboard-service app_state_blackboard \
-    --state-control-service app_state_control
+    --state-control-service app_state_control \
+    --initial-state normal
 ```
 
 ### Full System Startup Sequence
@@ -128,30 +142,36 @@ The state_machine should be started before other modules that depend on it:
 
 ```bash
 # 1. Start state machine
-./state_machine \
+install/bin/state_machine \
     --state-event-service app_state_event \
     --state-blackboard-service app_state_blackboard \
-    --state-control-service app_state_control &
+    --state-control-service app_state_control \
+    --initial-state normal &
 
 # 2. Start audio/video frontends (no state dependency)
-./audio_frontend --device hw:0,0 --service audio_capture &
-./video_frontend --device /dev/video0 --service video_capture &
+install/bin/audio_frontend --device hw:0,0 --service audio_capture &
+install/bin/video_frontend --device /dev/video0 --service video_capture &
 
 # 3. Start inference modules (each references the same state services)
-./speech_asr \
+install/bin/speech_asr \
     --input-service audio_capture --output-service speech_asr_result \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 
-./env_sound_det \
+install/bin/env_sound_det \
     --input-service audio_capture \
     --state-control-service app_state_control &
 
-./handpose_det \
+install/bin/handpose_det \
     --input-service video_capture --output-service handpose_result \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 
-./signlang_det \
+install/bin/signlang_manager \
+    --input-service handpose_result \
+    --signlang-control-service signlang_prototype_control &
+
+install/bin/signlang_det \
     --input-service handpose_result --output-service signlang_result \
+    --prototype-control-service signlang_prototype_control \
     --state-event-service app_state_event --state-blackboard-service app_state_blackboard &
 ```
 
@@ -159,7 +179,7 @@ The state_machine should be started before other modules that depend on it:
 
 | File | Description |
 |------|-------------|
-| `main.cpp` | Entry point; signal handling, main control loop (100ms cycle) |
+| `main.cpp` | Entry point; main control loop (100ms cycle) |
 | `program_options.{cpp,hpp}` | CLI argument parsing via cxxopts |
 | `app_state.{cpp,hpp}` | `AppState` enum (5 states), `AppStateKey` struct, helper functions |
 | `state_control.{cpp,hpp}` | `StateController` class: state machine logic, base/special state transitions, timeout handling |
@@ -252,10 +272,12 @@ StateControlRequest request{
 ## Performance Characteristics
 
 - **Control loop frequency**: 10 Hz (100ms period)
-- **Event notification latency**: <1ms
-- **Memory**: <1MB resident
-- **CPU usage**: <1% on single core
+- **Event notification latency**: <1ms (iceoryx2 event notifier)
+- **Blackboard write latency**: <0.5ms (single-entry zero-copy write)
+- **Memory**: <1MB resident (minimal state machine logic)
+- **CPU usage**: <1% on single core (Cortex-A76 @ 2.4GHz)
 - **Special state timeout precision**: ±100ms (limited by control loop frequency)
+- **Request-response throughput**: ~100 requests/second (limited by 100ms loop)
 
 ## Module State Integration
 
@@ -292,7 +314,7 @@ iox2-list
 Check state_machine logs:
 ```bash
 # Should show state transition messages
-tail -f logs/state_machine.log
+tail -f log/state_machine.log
 ```
 
 ### Special State Not Expiring

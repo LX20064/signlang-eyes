@@ -14,6 +14,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace signlang::video_frontend {
@@ -22,9 +23,7 @@ namespace signlang::video_frontend {
     constexpr auto kRequestedBufferCount = std::uint32_t{4};
     constexpr auto kSelectTimeoutSeconds = long{2};
 
-    auto v4l2_error_message(const std::string& context) -> std::string {
-      return context + ": " + std::strerror(errno);
-    }
+    auto v4l2_error_message(const std::string& context) -> std::string { return context + ": " + std::strerror(errno); }
 
     auto retry_ioctl(int fd, unsigned long request, void* arg) -> int {
       int result = 0;
@@ -54,11 +53,12 @@ namespace signlang::video_frontend {
       const auto candidate_area = frame_area(candidate.width, candidate.height);
       const auto selected_area = frame_area(selected_format.width, selected_format.height);
       return candidate_area > selected_area ||
-             (candidate_area == selected_area && candidate.pixel_format == kPixelFormatYuyv &&
-              selected_format.pixel_format != kPixelFormatYuyv);
+          (candidate_area == selected_area && candidate.pixel_format == kPixelFormatYuyv &&
+           selected_format.pixel_format != kPixelFormatYuyv);
     }
 
-    auto matches_stepwise_size(const v4l2_frmsize_stepwise& stepwise, std::uint32_t width, std::uint32_t height) -> bool {
+    auto matches_stepwise_size(const v4l2_frmsize_stepwise& stepwise, std::uint32_t width, std::uint32_t height)
+        -> bool {
       if (width < stepwise.min_width || width > stepwise.max_width || height < stepwise.min_height ||
           height > stepwise.max_height) {
         return false;
@@ -71,9 +71,8 @@ namespace signlang::video_frontend {
 
   } // namespace
 
-  V4l2CaptureDevice::V4l2CaptureDevice(const std::string& device_name, VideoFormatRequest format_request,
-                                       std::uint32_t fps) :
-      device_name_{device_name}, format_request_{format_request}, requested_fps_{fps}, device_fd_{-1},
+  V4l2CaptureDevice::V4l2CaptureDevice(std::string device_name, VideoFormatRequest format_request, std::uint32_t fps) :
+      device_name_{std::move(device_name)}, format_request_{format_request}, requested_fps_{fps}, device_fd_{-1},
       format_{.width = 0, .height = 0, .pixel_format = kPixelFormatYuyv}, fps_{fps}, max_frame_size_bytes_{0},
       active_buffer_index_{-1}, streaming_{false} {
     open_device();
@@ -185,8 +184,7 @@ namespace signlang::video_frontend {
           selected_format.width = frame_size.discrete.width;
           selected_format.height = frame_size.discrete.height;
         }
-      } else if (frame_size.type == V4L2_FRMSIZE_TYPE_STEPWISE ||
-                 frame_size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
+      } else if (frame_size.type == V4L2_FRMSIZE_TYPE_STEPWISE || frame_size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
         if (frame_area(frame_size.stepwise.max_width, frame_size.stepwise.max_height) >
             frame_area(selected_format.width, selected_format.height)) {
           selected_format.width = frame_size.stepwise.max_width;
@@ -196,7 +194,8 @@ namespace signlang::video_frontend {
     }
 
     if (selected_format.width == 0 || selected_format.height == 0) {
-      throw std::runtime_error(std::string("Failed to enumerate V4L2 frame sizes for ") + pixel_format_name(pixel_format));
+      throw std::runtime_error(std::string("Failed to enumerate V4L2 frame sizes for ") +
+                               pixel_format_name(pixel_format));
     }
 
     return selected_format;
@@ -212,8 +211,7 @@ namespace signlang::video_frontend {
         if (frame_size.discrete.width == width && frame_size.discrete.height == height) {
           return true;
         }
-      } else if (frame_size.type == V4L2_FRMSIZE_TYPE_STEPWISE ||
-                 frame_size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
+      } else if (frame_size.type == V4L2_FRMSIZE_TYPE_STEPWISE || frame_size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
         if (matches_stepwise_size(frame_size.stepwise, width, height)) {
           return true;
         }
@@ -353,7 +351,7 @@ namespace signlang::video_frontend {
     mapped_buffers_.clear();
   }
 
-  void V4l2CaptureDevice::enqueue_buffer(std::uint32_t buffer_index) {
+  void V4l2CaptureDevice::enqueue_buffer(std::uint32_t buffer_index) const {
     v4l2_buffer buffer{};
     buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buffer.memory = V4L2_MEMORY_MMAP;

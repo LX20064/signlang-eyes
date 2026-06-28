@@ -8,7 +8,6 @@
 #include "fftw3.h"
 #include "rknn_api.h"
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -36,7 +35,7 @@ namespace signlang::speech_asr {
     WhisperModel(WhisperModel&&) = delete;
     auto operator=(WhisperModel&&) -> WhisperModel& = delete;
 
-    auto infer(const AudioWindow& audio_window, AsrLanguage language) -> WhisperInferenceResult;
+    [[nodiscard]] auto infer(const AudioWindow& audio_window, AsrLanguage language) -> WhisperInferenceResult;
 
   private:
     struct MelFilterSpan {
@@ -46,26 +45,27 @@ namespace signlang::speech_asr {
 
     void initialize_contexts(const ProgramOptions& options);
     void initialize_context(const std::string& model_path, rknn_core_mask npu_core_mask,
-                            std::uint32_t rknn_priority_flag, rknn_context& context,
-                            rknn_input_output_num& io_num, std::vector<rknn_tensor_attr>& input_attrs,
-                            std::vector<rknn_tensor_attr>& output_attrs);
-    void query_model_io(rknn_context context, rknn_input_output_num& io_num,
-                        std::vector<rknn_tensor_attr>& input_attrs, std::vector<rknn_tensor_attr>& output_attrs);
+                            std::uint32_t rknn_priority_flag, rknn_context& context, rknn_input_output_num& io_num,
+                            std::vector<rknn_tensor_attr>& input_attrs, std::vector<rknn_tensor_attr>& output_attrs);
+    static void query_model_io(rknn_context context, rknn_input_output_num& io_num,
+                               std::vector<rknn_tensor_attr>& input_attrs, std::vector<rknn_tensor_attr>& output_attrs);
     void validate_model_io();
     void allocate_workspaces(std::uint32_t max_decode_steps);
     void load_assets(const ProgramOptions& options);
     void load_mel_filters(const std::string& path);
-    auto load_vocab(const std::string& path, bool base64_decode_tokens) -> std::vector<std::string>;
+    [[nodiscard]] static auto load_vocab(const std::string& path, bool base64_decode_tokens)
+        -> std::vector<std::string>;
     void build_mel_filter_spans();
     void initialize_fft_workspace();
     void prepare_mel_input(const AudioWindow& audio_window);
     void compute_log_mel(const float* audio, std::uint32_t audio_sample_count, std::uint32_t output_frame_count);
-    auto sample_with_reflect_pad(const float* audio, std::uint32_t audio_sample_count, std::uint32_t padded_index) const
-        -> float;
-    auto run_encoder() -> float;
-    auto run_decoder(AsrLanguage language, std::uint32_t& decoded_token_count) -> std::pair<std::string, float>;
-    auto vocabulary(AsrLanguage language) const -> const std::vector<std::string>&;
-    auto language_token(AsrLanguage language) const -> std::int64_t;
+    [[nodiscard]] static auto sample_with_reflect_pad(const float* audio, std::uint32_t audio_sample_count,
+                                                      std::uint32_t padded_index) -> float;
+    [[nodiscard]] auto run_encoder() -> float;
+    [[nodiscard]] auto run_decoder(AsrLanguage language, std::uint32_t& decoded_token_count)
+        -> std::pair<std::string, float>;
+    [[nodiscard]] auto vocabulary(AsrLanguage language) const -> const std::vector<std::string>&;
+    [[nodiscard]] static auto language_token(AsrLanguage language) -> std::int64_t;
 
     rknn_context encoder_context_;
     rknn_context decoder_context_;

@@ -1,5 +1,6 @@
 #include "iceoryx_gateway.hpp"
 
+#include "common/ipc_utils.hpp"
 #include "iox2/service_builder_blackboard_error.hpp"
 #include "spdlog/spdlog.h"
 
@@ -8,18 +9,6 @@
 #include <utility>
 
 namespace signlang::state_machine {
-  namespace {
-
-    auto service_name_from_string(const std::string& service_name) -> iox2::ServiceName {
-      const auto parsed_service_name = iox2::ServiceName::create(service_name.c_str());
-      if (!parsed_service_name.has_value()) {
-        throw std::runtime_error("Invalid iceoryx2 service name: " + service_name);
-      }
-
-      return parsed_service_name.value();
-    }
-
-  } // namespace
 
   IpcStatePublisher::IpcStatePublisher(const std::string& event_service_name,
                                        const std::string& blackboard_service_name, AppState initial_state) :
@@ -46,9 +35,8 @@ namespace signlang::state_machine {
   auto IpcStatePublisher::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
 
-    auto node = iox2::NodeBuilder()
-                    .signal_handling_mode(iox2::SignalHandlingMode::Disabled)
-                    .create<iox2::ServiceType::Ipc>();
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
     if (!node.has_value()) {
       throw std::runtime_error("Failed to create iceoryx2 IPC state machine node");
     }
@@ -59,7 +47,7 @@ namespace signlang::state_machine {
   auto IpcStatePublisher::create_blackboard_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                     const std::string& service_name, AppState initial_state)
       -> iox2::PortFactoryBlackboard<iox2::ServiceType::Ipc, AppStateKey> {
-    const auto parsed_service_name = service_name_from_string(service_name);
+    const auto parsed_service_name = signlang::common::ipc::service_name_from_string(service_name);
     auto service = node.service_builder(parsed_service_name)
                        .blackboard_creator<AppStateKey>()
                        .add<AppState>(default_app_state_key(), initial_state)
@@ -104,7 +92,8 @@ namespace signlang::state_machine {
   auto IpcStatePublisher::create_event_service(const iox2::Node<iox2::ServiceType::Ipc>& node,
                                                const std::string& service_name)
       -> iox2::PortFactoryEvent<iox2::ServiceType::Ipc> {
-    auto service = node.service_builder(service_name_from_string(service_name)).event().open_or_create();
+    auto service =
+        node.service_builder(signlang::common::ipc::service_name_from_string(service_name)).event().open_or_create();
     if (!service.has_value()) {
       throw std::runtime_error("Failed to open or create iceoryx2 app state event service: " + service_name);
     }
@@ -165,9 +154,8 @@ namespace signlang::state_machine {
   auto IpcStateControlServer::create_node() -> iox2::Node<iox2::ServiceType::Ipc> {
     iox2::set_log_level_from_env_or(iox2::LogLevel::Warn);
 
-    auto node = iox2::NodeBuilder()
-                    .signal_handling_mode(iox2::SignalHandlingMode::Disabled)
-                    .create<iox2::ServiceType::Ipc>();
+    auto node =
+        iox2::NodeBuilder().signal_handling_mode(iox2::SignalHandlingMode::Disabled).create<iox2::ServiceType::Ipc>();
     if (!node.has_value()) {
       throw std::runtime_error("Failed to create iceoryx2 IPC state control node");
     }
@@ -179,7 +167,7 @@ namespace signlang::state_machine {
                                              const std::string& service_name)
       -> iox2::PortFactoryRequestResponse<iox2::ServiceType::Ipc, StateControlRequest, void, StateControlResponse,
                                           void> {
-    auto service = node.service_builder(service_name_from_string(service_name))
+    auto service = node.service_builder(signlang::common::ipc::service_name_from_string(service_name))
                        .request_response<StateControlRequest, StateControlResponse>()
                        .max_servers(1)
                        .max_clients(8)

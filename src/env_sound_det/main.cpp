@@ -1,5 +1,5 @@
 #include "common/audio_ring_buffer.hpp"
-#include "common/logging.hpp"
+#include "common/runtime.hpp"
 #include "iceoryx_gateway.hpp"
 #include "program_options.hpp"
 #include "spdlog/spdlog.h"
@@ -9,32 +9,20 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <csignal>
-#include <cstdint>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
-#include <variant>
+#include <utility>
 
 namespace {
-
-  volatile std::sig_atomic_t g_should_stop = 0;
-
-  void handle_shutdown_signal(int /* signal_number */) { g_should_stop = 1; }
-
-  void install_signal_handlers() {
-    std::signal(SIGINT, handle_shutdown_signal);
-    std::signal(SIGTERM, handle_shutdown_signal);
-  }
 
   auto is_dangerous_sound_label(const std::array<char, signlang::env_sound_det::kMaxClassLabelLength>& label) -> bool {
     const std::string_view label_view{label.data()};
     return label_view == "Air horn, truck horn" || label_view == "Vehicle horn, car horn, honking" ||
-           label_view == "Train horn";
+        label_view == "Train horn";
   }
 
   auto has_dangerous_sound(const signlang::env_sound_det::YamnetInferenceResult& inference_result) -> bool {
@@ -49,7 +37,7 @@ namespace {
 
   auto ring_capacity_samples(std::uint64_t window_sample_count, std::uint64_t hop_sample_count) -> std::uint64_t {
     const auto minimum_capacity = window_sample_count + std::max(window_sample_count, hop_sample_count);
-    const auto one_second = static_cast<std::uint64_t>(signlang::env_sound_det::kYamnetSampleRateHz);
+    constexpr auto one_second = static_cast<std::uint64_t>(signlang::env_sound_det::kYamnetSampleRateHz);
     return std::max(minimum_capacity, window_sample_count + one_second);
   }
 
@@ -64,23 +52,9 @@ auto main(int argc, char** argv) -> int {
   using signlang::env_sound_det::IpcStateControlClient;
   using signlang::env_sound_det::kYamnetSampleRateHz;
   using signlang::env_sound_det::parse_program_options;
-  using signlang::env_sound_det::ProgramOptions;
-  using signlang::env_sound_det::ProgramUsage;
   using signlang::env_sound_det::YamnetModel;
 
-  signlang::logging::initialize();
-
-  try {
-    const auto parse_result = parse_program_options(argc, argv);
-    if (const auto* usage = std::get_if<ProgramUsage>(&parse_result); usage != nullptr) {
-      std::cout << usage->text << '\n';
-      return 0;
-    }
-
-    const auto options = std::get<ProgramOptions>(parse_result);
-    signlang::logging::initialize(options.logging);
-    install_signal_handlers();
-
+  return signlang::runtime::run_module(argc, argv, parse_program_options, [&](const auto& options) {
     spdlog::info("Starting environment sound detector");
     spdlog::info("Model: {}", options.model_path);
     spdlog::info("Window: {}ms, overlap: {:.1f}%", options.window_ms, options.overlap_ratio * 100);
@@ -93,6 +67,7 @@ auto main(int argc, char** argv) -> int {
 
     AudioRingBuffer audio_buffer{ring_capacity_samples(window_sample_count, hop_sample_count), kYamnetSampleRateHz};
     std::atomic_bool should_stop{false};
+    std::atomic_bool downstream_active{false};
     std::exception_ptr worker_error = nullptr;
     std::mutex worker_error_mutex;
 
@@ -100,7 +75,7 @@ auto main(int argc, char** argv) -> int {
       {
         const std::lock_guard<std::mutex> lock{worker_error_mutex};
         if (worker_error == nullptr) {
-          worker_error = error;
+          worker_error = std::move(error);
         }
       }
       should_stop.store(true);
@@ -109,11 +84,22 @@ auto main(int argc, char** argv) -> int {
 
     std::thread receiver_thread{[&] {
       try {
-        IpcAudioSubscriber audio_subscriber{options.audio_service_name, options.subscriber_buffer_size};
+        auto audio_subscriber = std::optional<IpcAudioSubscriber>{};
 
-        while (!should_stop.load() && audio_subscriber.wait_for_work()) {
-          if (!should_stop.load()) {
-            audio_subscriber.receive_available(audio_buffer);
+        while (!should_stop.load()) {
+          if (!downstream_active.load()) {
+            audio_subscriber.reset();
+            audio_buffer.clear();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+          }
+
+          if (!audio_subscriber.has_value()) {
+            audio_subscriber.emplace(options.audio_service_name, options.subscriber_buffer_size);
+          }
+
+          if (audio_subscriber->wait_for_work() && !should_stop.load() && downstream_active.load()) {
+            audio_subscriber->receive_available(audio_buffer);
           }
         }
       } catch (...) {
@@ -129,11 +115,24 @@ auto main(int argc, char** argv) -> int {
         spdlog::info("YAMNet model loaded successfully");
 
         IpcStateControlClient state_control_client{options.state_control_service_name};
-        AudioWindow audio_window;
         std::optional<std::uint64_t> next_window_start_sample;
 
-        while (audio_buffer.wait_for_window(next_window_start_sample, window_sample_count, hop_sample_count,
+        while (!should_stop.load()) {
+          const auto has_downstream = state_control_client.has_server();
+          downstream_active.store(has_downstream);
+          if (!has_downstream) {
+            audio_buffer.clear();
+            next_window_start_sample = std::nullopt;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+          }
+
+          AudioWindow audio_window;
+          if (!audio_buffer.wait_for_window(next_window_start_sample, window_sample_count, hop_sample_count,
                                             should_stop, audio_window)) {
+            break;
+          }
+
           const auto inference_result = model.infer(audio_window);
 
           if (has_dangerous_sound(inference_result)) {
@@ -147,7 +146,7 @@ auto main(int argc, char** argv) -> int {
       }
     }};
 
-    while (!should_stop.load() && g_should_stop == 0) {
+    while (!should_stop.load() && !signlang::runtime::shutdown_requested()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -162,8 +161,5 @@ auto main(int argc, char** argv) -> int {
     }
 
     return 0;
-  } catch (const std::exception& error) {
-    spdlog::error("{}", error.what());
-    return 1;
-  }
+  });
 }

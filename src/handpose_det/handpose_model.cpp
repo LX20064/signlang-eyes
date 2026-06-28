@@ -1,12 +1,22 @@
 #include "handpose_model.hpp"
+#include "handpose_selection.hpp"
 
 #include "Float16.h"
 #include "im2d.h"
 #include "rga.h"
 #include "spdlog/spdlog.h"
 
+#include <dirent.h>
+#include <fcntl.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-heap.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -28,7 +38,14 @@ namespace signlang::handpose_det {
     constexpr auto kPalmScoreClip = 100.0F;
     constexpr auto kPalmBoxScale = 192.0F;
     constexpr auto kLandmarkValueCount = std::uint32_t{63};
-    constexpr auto kCropExpansion = 2.0F;
+    constexpr auto kPi = 3.14159265358979F;
+    constexpr auto kDmaHeapPaths = std::array{
+        "/dev/dma_heap/system-dma32",    "/dev/dma_heap/system-uncached-dma32",
+        "/dev/dma_heap/system-uncached", "/dev/dma_heap/system",
+        "/dev/dma_heap/linux,cma",       "/dev/dma_heap/cma",
+        "/dev/dma_heap/cma-uncached",
+    };
+    constexpr auto kDmaHeapDirectory = "/dev/dma_heap";
 
     auto read_file(const std::string& path) -> std::vector<std::uint8_t> {
       std::ifstream file{path, std::ios::binary | std::ios::ate};
@@ -43,7 +60,8 @@ namespace signlang::handpose_det {
 
       std::vector<std::uint8_t> data(static_cast<std::size_t>(size));
       file.seekg(0, std::ios::beg);
-      if (!file.read(reinterpret_cast<char*>(data.data()), size)) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+      if (!file.read(reinterpret_cast<char*>(data.data()),
+                     size)) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
         throw std::runtime_error("Failed to read RKNN model: " + path);
       }
 
@@ -128,12 +146,73 @@ namespace signlang::handpose_det {
       throw std::runtime_error("Unsupported RKNN tensor type");
     }
 
-    void resize_rgb_with_rga(const std::uint8_t* src_data, std::uint32_t src_width, std::uint32_t src_height,
-                             std::uint8_t* dst_data, std::uint32_t dst_width, std::uint32_t dst_height,
-                             im_rect src_rect) {
+    void append_open_error(std::string& open_errors, const std::string& heap_path, int error_number) {
+      if (!open_errors.empty()) {
+        open_errors += "; ";
+      }
+      open_errors += heap_path + " errno=" + std::to_string(error_number);
+    }
+
+    auto try_allocate_dma_heap_buffer(const std::string& heap_path, std::uint64_t size_bytes, std::string& open_errors)
+        -> int {
+      const auto heap_fd = ::open(heap_path.c_str(), O_RDWR | O_CLOEXEC);
+      if (heap_fd < 0) {
+        append_open_error(open_errors, heap_path, errno);
+        return -1;
+      }
+
+      auto allocation = dma_heap_allocation_data{};
+      allocation.len = size_bytes;
+      allocation.fd_flags = O_RDWR | O_CLOEXEC;
+      allocation.heap_flags = 0;
+
+      if (::ioctl(heap_fd, DMA_HEAP_IOCTL_ALLOC, &allocation) < 0) {
+        const auto saved_errno = errno;
+        ::close(heap_fd);
+        throw std::runtime_error("Failed to allocate handpose DMA heap buffer from " + heap_path +
+                                 ", errno=" + std::to_string(saved_errno));
+      }
+
+      ::close(heap_fd);
+      return static_cast<int>(allocation.fd);
+    }
+
+    auto allocate_dma_heap_buffer(std::uint64_t size_bytes) -> int {
+      auto open_errors = std::string{};
+      for (const auto* heap_path : kDmaHeapPaths) {
+        const auto fd = try_allocate_dma_heap_buffer(heap_path, size_bytes, open_errors);
+        if (fd >= 0) {
+          return fd;
+        }
+      }
+
+      auto* directory = ::opendir(kDmaHeapDirectory);
+      if (directory == nullptr) {
+        append_open_error(open_errors, kDmaHeapDirectory, errno);
+      } else {
+        while (auto* entry = ::readdir(directory)) {
+          const auto name = std::string{entry->d_name};
+          if (name == "." || name == "..") {
+            continue;
+          }
+          const auto heap_path = std::string{kDmaHeapDirectory} + "/" + name;
+          const auto fd = try_allocate_dma_heap_buffer(heap_path, size_bytes, open_errors);
+          if (fd >= 0) {
+            ::closedir(directory);
+            return fd;
+          }
+        }
+        ::closedir(directory);
+      }
+
+      throw std::runtime_error("Failed to open any handpose DMA heap: " + open_errors);
+    }
+
+    void resize_rgb_with_rga(int src_fd, std::uint32_t src_width, std::uint32_t src_height, std::uint8_t* dst_data,
+                             std::uint32_t dst_width, std::uint32_t dst_height, im_rect src_rect) {
       const auto src_size = checked_rgb_size_bytes(src_width, src_height);
       const auto dst_size = checked_rgb_size_bytes(dst_width, dst_height);
-      const auto src_handle = importbuffer_virtualaddr(const_cast<std::uint8_t*>(src_data), static_cast<int>(src_size));
+      const auto src_handle = importbuffer_fd(src_fd, static_cast<int>(src_size));
       if (src_handle == 0) {
         throw std::runtime_error("RGA: failed to import handpose source buffer");
       }
@@ -144,13 +223,13 @@ namespace signlang::handpose_det {
         throw std::runtime_error("RGA: failed to import handpose destination buffer");
       }
 
-      auto src_img = wrapbuffer_handle(src_handle, static_cast<int>(src_width), static_cast<int>(src_height),
-                                       RK_FORMAT_RGB_888);
-      auto dst_img = wrapbuffer_handle(dst_handle, static_cast<int>(dst_width), static_cast<int>(dst_height),
-                                       RK_FORMAT_RGB_888);
-      const auto dst_rect = im_rect{.x = 0, .y = 0, .width = static_cast<int>(dst_width),
-                                    .height = static_cast<int>(dst_height)};
-      const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+      auto src_img =
+          wrapbuffer_handle(src_handle, static_cast<int>(src_width), static_cast<int>(src_height), RK_FORMAT_RGB_888);
+      auto dst_img =
+          wrapbuffer_handle(dst_handle, static_cast<int>(dst_width), static_cast<int>(dst_height), RK_FORMAT_RGB_888);
+      const auto dst_rect =
+          im_rect{.x = 0, .y = 0, .width = static_cast<int>(dst_width), .height = static_cast<int>(dst_height)};
+      constexpr auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
       const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, IM_SYNC);
 
       releasebuffer_handle(dst_handle);
@@ -167,12 +246,6 @@ namespace signlang::handpose_det {
   struct HandPoseModel::Anchor {
     float x_center;
     float y_center;
-  };
-
-  struct HandPoseModel::CropTransform {
-    float left;
-    float top;
-    float size;
   };
 
   struct HandPoseModel::RknnModel {
@@ -212,8 +285,8 @@ namespace signlang::handpose_det {
       input_attr.type = RKNN_TENSOR_UINT8;
       input_attr.fmt = RKNN_TENSOR_NHWC;
       input_attr.pass_through = 0;
-      input_mem = rknn_create_mem(context, input_attr.size_with_stride == 0 ? input_attr.size
-                                                                            : input_attr.size_with_stride);
+      input_mem =
+          rknn_create_mem(context, input_attr.size_with_stride == 0 ? input_attr.size : input_attr.size_with_stride);
       if (input_mem == nullptr) {
         throw std::runtime_error("rknn_create_mem(input) failed");
       }
@@ -224,8 +297,8 @@ namespace signlang::handpose_det {
       for (std::uint32_t i = 0; i < output_attrs.size(); ++i) {
         auto output_attr = output_attrs[i];
         output_attr.fmt = RKNN_TENSOR_NCHW;
-        output_mems[i] = rknn_create_mem(context, output_attr.size_with_stride == 0 ? output_attr.size
-                                                                                    : output_attr.size_with_stride);
+        output_mems[i] = rknn_create_mem(
+            context, output_attr.size_with_stride == 0 ? output_attr.size : output_attr.size_with_stride);
         if (output_mems[i] == nullptr) {
           throw std::runtime_error("rknn_create_mem(output) failed");
         }
@@ -251,14 +324,14 @@ namespace signlang::handpose_det {
     RknnModel(const RknnModel&) = delete;
     auto operator=(const RknnModel&) -> RknnModel& = delete;
 
-    auto width() const -> std::uint32_t { return input_width; }
-    auto height() const -> std::uint32_t { return input_height; }
+    [[nodiscard]] auto width() const -> std::uint32_t { return input_width; }
+    [[nodiscard]] auto height() const -> std::uint32_t { return input_height; }
 
-    auto input_stride_width_pixels() const -> std::uint32_t {
+    [[nodiscard]] auto input_stride_width_pixels() const -> std::uint32_t {
       return input_attrs[0].w_stride == 0 ? width() : input_attrs[0].w_stride;
     }
 
-    auto input_data() -> std::uint8_t* { return static_cast<std::uint8_t*>(input_mem->virt_addr); }
+    [[nodiscard]] auto input_data() const -> std::uint8_t* { return static_cast<std::uint8_t*>(input_mem->virt_addr); }
 
     void run() {
       checked_ret(rknn_mem_sync(context, input_mem, RKNN_MEMORY_SYNC_TO_DEVICE), "rknn_mem_sync(input)");
@@ -268,7 +341,7 @@ namespace signlang::handpose_det {
       }
     }
 
-    auto output_value(std::uint32_t output_index, std::uint64_t offset) const -> float {
+    [[nodiscard]] auto output_value(std::uint32_t output_index, std::uint64_t offset) const -> float {
       return tensor_value(output_attrs[output_index], output_mems[output_index], offset);
     }
 
@@ -284,58 +357,204 @@ namespace signlang::handpose_det {
   };
 
   HandPoseModel::HandPoseModel(std::string palm_detector_model_path, std::string landmark_model_path,
-                               const ProgramOptions& options) :
+                               const ProgramOptions& options, std::uint32_t hand_slots) :
       palm_detector_model_path_{std::move(palm_detector_model_path)},
       landmark_model_path_{std::move(landmark_model_path)}, palm_detector_{nullptr}, landmark_model_{nullptr},
-      confidence_threshold_{options.confidence_threshold}, keypoint_count_{options.keypoint_count},
-      output_hands_{options.output_hands}, model_width_{kPalmInputSize}, model_height_{kPalmInputSize} {
-    if (keypoint_count_ != kHandPoseKeypointCount) {
-      throw std::runtime_error("MediaPipe hand landmark model requires exactly 21 keypoints");
-    }
+      current_frame_number_{0}, confidence_threshold_{options.confidence_threshold},
+      presence_threshold_{options.presence_threshold}, tracking_threshold_{options.tracking_threshold},
+      nms_iou_threshold_{options.nms_iou_threshold},
+      tracking_iou_match_threshold_{options.tracking_iou_match_threshold}, crop_expansion_{options.crop_expansion},
+      base_roi_expansion_{options.base_roi_expansion}, small_hand_expansion_{options.small_hand_expansion},
+      large_hand_expansion_{options.large_hand_expansion}, small_hand_threshold_{options.small_hand_threshold},
+      large_hand_threshold_{options.large_hand_threshold}, boundary_margin_{options.boundary_margin},
+      boundary_min_factor_{options.boundary_min_factor}, euro_min_cutoff_{options.euro_min_cutoff},
+      euro_beta_{options.euro_beta}, euro_d_cutoff_{options.euro_d_cutoff},
+      handedness_threshold_{options.handedness_threshold}, swap_handedness_{options.swap_handedness},
+      max_tracking_gap_{options.max_tracking_gap}, max_stale_frames_{options.max_stale_frames},
+      single_hand_full_frame_interval_{options.single_hand_full_frame_interval},
+      stable_hands_full_frame_interval_{options.stable_hands_full_frame_interval}, hand_slots_{hand_slots},
+      model_width_{kPalmInputSize}, model_height_{kPalmInputSize}, source_dma_fd_{-1}, source_dma_data_{nullptr},
+      source_dma_capacity_{0} {
     initialize_models(options);
     validate_models();
     build_palm_anchors();
     candidates_.reserve(kPalmAnchorCount);
-    selected_.reserve(output_hands_);
+    selected_.reserve(hand_slots_);
+    tracked_hands_.reserve(hand_slots_);
+    keypoint_filters_.resize(hand_slots_);
+    for (auto& hand_filters : keypoint_filters_) {
+      hand_filters.resize(kHandPoseKeypointCount * 3);
+      for (auto& filter : hand_filters) {
+        filter = OneEuroFilter{.x = 0.0F,
+                               .dx = 0.0F,
+                               .min_cutoff = euro_min_cutoff_,
+                               .beta = euro_beta_,
+                               .d_cutoff = euro_d_cutoff_,
+                               .last_time = 0,
+                               .initialized = false};
+      }
+    }
   }
 
-  HandPoseModel::~HandPoseModel() = default;
+  HandPoseModel::~HandPoseModel() { release_source_dma_buffer(); }
+
+  void HandPoseModel::ensure_source_dma_buffer(std::uint64_t required_size) const {
+    if (source_dma_fd_ >= 0 && source_dma_capacity_ >= required_size) {
+      return;
+    }
+
+    release_source_dma_buffer();
+    source_dma_fd_ = allocate_dma_heap_buffer(required_size);
+    source_dma_data_ = static_cast<std::uint8_t*>(
+        ::mmap(nullptr, required_size, PROT_READ | PROT_WRITE, MAP_SHARED, source_dma_fd_, 0));
+    if (source_dma_data_ == MAP_FAILED) {
+      source_dma_data_ = nullptr;
+      const auto saved_errno = errno;
+      ::close(source_dma_fd_);
+      source_dma_fd_ = -1;
+      throw std::runtime_error("Failed to mmap handpose DMA source buffer, errno=" + std::to_string(saved_errno));
+    }
+    source_dma_capacity_ = required_size;
+  }
+
+  auto HandPoseModel::source_dma_data() const -> std::uint8_t* {
+    if (source_dma_data_ == nullptr) {
+      throw std::runtime_error("Handpose DMA source buffer is not mapped");
+    }
+    return source_dma_data_;
+  }
+
+  auto HandPoseModel::source_dma_fd() const -> int {
+    if (source_dma_fd_ < 0) {
+      throw std::runtime_error("Handpose DMA source buffer fd is not valid");
+    }
+    return source_dma_fd_;
+  }
+
+  void HandPoseModel::sync_source_dma_buffer(std::uint64_t flags) const {
+    auto sync = dma_buf_sync{.flags = flags};
+    if (::ioctl(source_dma_fd(), DMA_BUF_IOCTL_SYNC, &sync) < 0) {
+      throw std::runtime_error("Failed to sync handpose DMA source buffer, errno=" + std::to_string(errno));
+    }
+  }
+
+  void HandPoseModel::release_source_dma_buffer() const {
+    if (source_dma_data_ != nullptr) {
+      ::munmap(source_dma_data_, source_dma_capacity_);
+      source_dma_data_ = nullptr;
+    }
+    if (source_dma_fd_ >= 0) {
+      ::close(source_dma_fd_);
+      source_dma_fd_ = -1;
+    }
+    source_dma_capacity_ = 0;
+  }
 
   auto HandPoseModel::run(const signlang::video_frontend::VideoFrameMetadata& metadata, const std::uint8_t* payload,
-                          std::uint64_t payload_size,
-                          iox2::bb::MutableSlice<HandPoseDetection> detections) -> InferenceResult {
-    if (detections.number_of_elements() < output_hands_) {
-      throw std::runtime_error("Hand pose output slice is smaller than requested hand count");
+                          std::uint64_t payload_size, iox2::bb::MutableSlice<HandPoseDetection> detections)
+      -> InferenceResult {
+    if (detections.number_of_elements() < hand_slots_) {
+      throw std::runtime_error("Hand pose output slice is smaller than configured hand slots");
+    }
+    if (metadata.pixel_format != signlang::video_frontend::kPixelFormatRgb24) {
+      throw std::runtime_error("Hand pose detector supports RGB24 video input only");
+    }
+    if (metadata.output_width == 0 || metadata.output_height == 0) {
+      throw std::runtime_error("Invalid upstream video frame dimensions");
+    }
+    const auto source_size = checked_rgb_size_bytes(metadata.output_width, metadata.output_height);
+    if (payload_size < source_size) {
+      throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
     }
 
-    for (std::uint32_t i = 0; i < output_hands_; ++i) {
+    ensure_source_dma_buffer(source_size);
+    sync_source_dma_buffer(DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+    std::memcpy(source_dma_data(), payload, static_cast<std::size_t>(source_size));
+    sync_source_dma_buffer(DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
+
+    for (std::uint32_t i = 0; i < hand_slots_; ++i) {
       detections[i] = HandPoseDetection{};
+      detections[i].present = false;
     }
 
-    run_palm_detector(metadata, payload, payload_size);
-    std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
-      return lhs.detection.confidence > rhs.detection.confidence;
-    });
+    current_frame_number_++;
+
+    try_tracking_from_previous_frame(metadata, payload, payload_size);
+
+    auto tracked_count = std::uint32_t{0};
+    for (const auto& tracked : tracked_hands_) {
+      if (tracked.last_seen_frame == current_frame_number_) {
+        tracked_count++;
+      }
+    }
 
     selected_.clear();
-    const auto selected_count = std::min<std::uint32_t>(output_hands_, static_cast<std::uint32_t>(candidates_.size()));
-    for (std::uint32_t i = 0; i < selected_count; ++i) {
-      selected_.push_back(candidates_[i]);
+    if (should_run_full_frame_detection(tracked_count)) {
+      run_palm_detector(metadata, payload, payload_size);
+      apply_nms();
+
+      std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+        return lhs.detection.confidence > rhs.detection.confidence;
+      });
+
+      for (std::size_t i = 0; i < candidates_.size() && selected_.size() < hand_slots_; ++i) {
+        selected_.push_back(candidates_[i]);
+      }
+
+      std::sort(selected_.begin(), selected_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+        const auto lhs_center = (lhs.detection.box.left + lhs.detection.box.right) * 0.5F;
+        const auto rhs_center = (rhs.detection.box.left + rhs.detection.box.right) * 0.5F;
+        return lhs_center < rhs_center;
+      });
+
+      for (auto& selected : selected_) {
+        run_landmark_detector(metadata, payload, payload_size, selected);
+      }
     }
 
-    std::sort(selected_.begin(), selected_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
-      const auto lhs_center = (lhs.detection.box.left + lhs.detection.box.right) * 0.5F;
-      const auto rhs_center = (rhs.detection.box.left + rhs.detection.box.right) * 0.5F;
-      return lhs_center < rhs_center;
-    });
+    update_tracked_hands(selected_);
 
-    for (std::uint32_t i = 0; i < selected_.size(); ++i) {
-      run_landmark_detector(metadata, payload, payload_size, selected_[i]);
-      detections[i] = selected_[i].detection;
+    for (std::size_t i = 0; i < tracked_hands_.size() && static_cast<std::uint32_t>(i) < hand_slots_; ++i) {
+      if (tracked_hands_[i].last_seen_frame == current_frame_number_) {
+        smooth_keypoints_hand(i, metadata.timestamp_ns);
+      }
+    }
+
+    auto handedness_candidates = std::vector<HandednessCandidate>{};
+    handedness_candidates.reserve(tracked_hands_.size());
+    for (std::size_t i = 0; i < tracked_hands_.size(); ++i) {
+      const auto& tracked = tracked_hands_[i];
+      if (tracked.last_seen_frame == current_frame_number_) {
+        handedness_candidates.push_back(HandednessCandidate{
+            .index = static_cast<std::uint32_t>(i),
+            .confidence = tracked.palm_confidence,
+            .handedness_score = tracked.handedness_score,
+        });
+      }
+    }
+
+    const auto selections =
+        select_handedness_detections(handedness_candidates, handedness_threshold_, swap_handedness_, hand_slots_);
+
+    auto output_idx = std::uint32_t{0};
+    for (const auto& selection : selections) {
+      if (selection.candidate_index < tracked_hands_.size() && output_idx < hand_slots_) {
+        const auto& tracked = tracked_hands_[selection.candidate_index];
+        detections[output_idx] = HandPoseDetection{
+            .box = tracked.roi,
+            .keypoints = tracked.smoothed_keypoints,
+            .confidence = tracked.palm_confidence,
+            .presence_confidence = tracked.presence_confidence,
+            .class_id = 0,
+            .present = true,
+            .is_left_hand = selection.is_left_hand,
+        };
+        output_idx++;
+      }
     }
 
     return InferenceResult{
-        .detection_count = output_hands_,
+        .detection_count = output_idx,
         .image_width = metadata.output_width,
         .image_height = metadata.output_height,
         .model_width = palm_detector_->width(),
@@ -375,13 +594,12 @@ namespace signlang::handpose_det {
 
   void HandPoseModel::print_tensor_details() const {
     const auto log_model = [](const char* label, const RknnModel& model) {
-      spdlog::info("{} input: name={} dims=[{}] size={} stride_size={}",
-                   label, model.input_attrs[0].name, dims_string(model.input_attrs[0]), model.input_attrs[0].size,
-                   model.input_attrs[0].size_with_stride);
+      spdlog::info("{} input: name={} dims=[{}] size={} stride_size={}", label, model.input_attrs[0].name,
+                   dims_string(model.input_attrs[0]), model.input_attrs[0].size, model.input_attrs[0].size_with_stride);
       for (std::uint32_t i = 0; i < model.output_attrs.size(); ++i) {
         const auto& output = model.output_attrs[i];
-        spdlog::info("{} output[{}]: name={} dims=[{}] size={} stride_size={}",
-                     label, i, output.name, dims_string(output), output.size, output.size_with_stride);
+        spdlog::info("{} output[{}]: name={} dims=[{}] size={} stride_size={}", label, i, output.name,
+                     dims_string(output), output.size, output.size_with_stride);
       }
     };
     log_model("Palm detector", *palm_detector_);
@@ -394,8 +612,8 @@ namespace signlang::handpose_det {
     constexpr auto strides = std::array<std::uint32_t, 4>{8, 16, 16, 16};
 
     for (const auto stride : strides) {
-      const auto feature_map_size = static_cast<std::uint32_t>(std::ceil(static_cast<float>(kPalmInputSize) /
-                                                                          static_cast<float>(stride)));
+      const auto feature_map_size =
+          static_cast<std::uint32_t>(std::ceil(static_cast<float>(kPalmInputSize) / static_cast<float>(stride)));
       for (std::uint32_t y = 0; y < feature_map_size; ++y) {
         for (std::uint32_t x = 0; x < feature_map_size; ++x) {
           const auto x_center = (static_cast<float>(x) + 0.5F) / static_cast<float>(feature_map_size);
@@ -411,21 +629,28 @@ namespace signlang::handpose_det {
     }
   }
 
+  auto HandPoseModel::should_run_full_frame_detection(std::uint32_t tracked_count) const -> bool {
+    if (tracked_count < hand_slots_) {
+      if (tracked_count == 1 && single_hand_full_frame_interval_ > 0) {
+        return current_frame_number_ % single_hand_full_frame_interval_ == 0;
+      }
+      return true;
+    }
+
+    return stable_hands_full_frame_interval_ > 0 && current_frame_number_ % stable_hands_full_frame_interval_ == 0;
+  }
+
   void HandPoseModel::run_palm_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
                                         const std::uint8_t* payload, std::uint64_t payload_size) {
-    if (metadata.pixel_format != signlang::video_frontend::kPixelFormatRgb24) {
-      throw std::runtime_error("Hand pose detector supports RGB24 video input only");
-    }
-    if (metadata.output_width == 0 || metadata.output_height == 0) {
-      throw std::runtime_error("Invalid upstream video frame dimensions");
-    }
     if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
       throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
     }
 
-    const auto full_frame = im_rect{.x = 0, .y = 0, .width = static_cast<int>(metadata.output_width),
+    const auto full_frame = im_rect{.x = 0,
+                                    .y = 0,
+                                    .width = static_cast<int>(metadata.output_width),
                                     .height = static_cast<int>(metadata.output_height)};
-    resize_rgb_with_rga(payload, metadata.output_width, metadata.output_height, palm_detector_->input_data(),
+    resize_rgb_with_rga(source_dma_fd(), metadata.output_width, metadata.output_height, palm_detector_->input_data(),
                         palm_detector_->width(), palm_detector_->height(), full_frame);
     palm_detector_->run();
 
@@ -456,6 +681,7 @@ namespace signlang::handpose_det {
       };
       candidate.detection.confidence = score;
       candidate.detection.class_id = 0;
+      candidate.handedness_score = 0.5F;
 
       for (std::uint32_t k = 0; k < kPalmKeypointValueCount; k += 2) {
         candidate.palm_keypoints[k] =
@@ -473,13 +699,13 @@ namespace signlang::handpose_det {
     }
   }
 
-  auto HandPoseModel::crop_transform_for(const HandPoseBox& box, std::uint32_t image_width,
-                                         std::uint32_t image_height) const -> CropTransform {
+  auto HandPoseModel::crop_transform_from_box(const HandPoseBox& box, std::uint32_t image_width,
+                                              std::uint32_t image_height) const -> CropTransform {
     const auto center_x = (box.left + box.right) * 0.5F;
     const auto center_y = (box.top + box.bottom) * 0.5F;
     const auto box_width = std::max(1.0F, box.right - box.left);
     const auto box_height = std::max(1.0F, box.bottom - box.top);
-    const auto size = std::max(box_width, box_height) * kCropExpansion;
+    const auto size = std::max(box_width, box_height) * crop_expansion_;
     const auto left = std::clamp(center_x - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_width) - 1.0F));
     const auto top = std::clamp(center_y - size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_height) - 1.0F));
     const auto right = std::clamp(center_x + size * 0.5F, left + 1.0F, static_cast<float>(image_width));
@@ -488,50 +714,385 @@ namespace signlang::handpose_det {
     return CropTransform{.left = left, .top = top, .size = std::max(1.0F, crop_size)};
   }
 
-  void HandPoseModel::run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
-                                            const std::uint8_t* payload, std::uint64_t payload_size,
-                                            PalmCandidate& candidate) {
-    if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
-      throw std::runtime_error("Upstream RGB video frame payload is smaller than metadata dimensions");
-    }
-
-    const auto transform = crop_transform_for(candidate.detection.box, metadata.output_width, metadata.output_height);
+  auto HandPoseModel::extract_landmarks(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                        const std::uint8_t* payload, std::uint64_t payload_size,
+                                        const CropTransform& transform,
+                                        std::array<HandPoseKeypoint, kHandPoseKeypointCount>& out, float& out_presence,
+                                        bool& out_is_left, float& out_handedness_score) const -> bool {
     const auto src_rect = im_rect{
         .x = static_cast<int>(std::floor(transform.left)),
         .y = static_cast<int>(std::floor(transform.top)),
         .width = std::max(1, static_cast<int>(std::floor(transform.size))),
         .height = std::max(1, static_cast<int>(std::floor(transform.size))),
     };
-    resize_rgb_with_rga(payload, metadata.output_width, metadata.output_height, landmark_model_->input_data(),
+    if (payload_size < checked_rgb_size_bytes(metadata.output_width, metadata.output_height)) {
+      return false;
+    }
+    resize_rgb_with_rga(source_dma_fd(), metadata.output_width, metadata.output_height, landmark_model_->input_data(),
                         landmark_model_->width(), landmark_model_->height(), src_rect);
     landmark_model_->run();
 
-    const auto hand_presence = std::clamp(landmark_model_->output_value(1, 0), 0.0F, 1.0F);
-    candidate.detection.confidence = std::min(candidate.detection.confidence, hand_presence);
-    const auto scale = transform.size / static_cast<float>(landmark_model_->width());
+    out_presence = std::clamp(landmark_model_->output_value(1, 0), 0.0F, 1.0F);
+    if (out_presence < presence_threshold_) {
+      return false;
+    }
 
-    auto left = std::numeric_limits<float>::max();
-    auto top = std::numeric_limits<float>::max();
-    auto right = 0.0F;
-    auto bottom = 0.0F;
+    if (landmark_model_->output_attrs.size() >= 3 && output_element_count(landmark_model_->output_attrs[2]) >= 1) {
+      out_handedness_score = std::clamp(landmark_model_->output_value(2, 0), 0.0F, 1.0F);
+      const auto left_score = swap_handedness_ ? 1.0F - out_handedness_score : out_handedness_score;
+      out_is_left = left_score > handedness_threshold_;
+    } else {
+      out_handedness_score = 0.5F;
+      out_is_left = false;
+    }
+
+    const auto scale = transform.size / static_cast<float>(landmark_model_->width());
     for (std::uint32_t i = 0; i < kHandPoseKeypointCount; ++i) {
       const auto base = static_cast<std::uint64_t>(i) * 3;
       const auto x = transform.left + landmark_model_->output_value(0, base) * scale;
       const auto y = transform.top + landmark_model_->output_value(0, base + 1) * scale;
       const auto z = landmark_model_->output_value(0, base + 2) * scale;
-      candidate.detection.keypoints[i] = HandPoseKeypoint{
+      out[i] = HandPoseKeypoint{
           .x = std::clamp(x, 0.0F, static_cast<float>(metadata.output_width)),
           .y = std::clamp(y, 0.0F, static_cast<float>(metadata.output_height)),
           .z = z,
-          .confidence = hand_presence,
+          .confidence = out_presence,
       };
-      left = std::min(left, candidate.detection.keypoints[i].x);
-      top = std::min(top, candidate.detection.keypoints[i].y);
-      right = std::max(right, candidate.detection.keypoints[i].x);
-      bottom = std::max(bottom, candidate.detection.keypoints[i].y);
+    }
+    return true;
+  }
+
+  void HandPoseModel::run_landmark_detector(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                            const std::uint8_t* payload, std::uint64_t payload_size,
+                                            PalmCandidate& candidate) {
+    const auto transform =
+        crop_transform_from_palm_keypoints(candidate.palm_keypoints, metadata.output_width, metadata.output_height);
+    std::array<HandPoseKeypoint, kHandPoseKeypointCount> keypoints{};
+    float presence = 0.0F;
+    bool is_left = false;
+    float handedness_score = 0.5F;
+
+    if (!extract_landmarks(metadata, payload, payload_size, transform, keypoints, presence, is_left,
+                           handedness_score)) {
+      candidate.detection.present = false;
+      candidate.detection.presence_confidence = presence;
+      return;
     }
 
+    candidate.detection.keypoints = keypoints;
+    candidate.detection.presence_confidence = presence;
+    candidate.detection.confidence = std::min(candidate.detection.confidence, presence);
+    candidate.detection.present = true;
+    candidate.detection.is_left_hand = is_left;
+    candidate.handedness_score = handedness_score;
+
+    auto left = std::numeric_limits<float>::max();
+    auto top = std::numeric_limits<float>::max();
+    auto right = 0.0F;
+    auto bottom = 0.0F;
+    for (const auto& kp : keypoints) {
+      left = std::min(left, kp.x);
+      top = std::min(top, kp.y);
+      right = std::max(right, kp.x);
+      bottom = std::max(bottom, kp.y);
+    }
     candidate.detection.box = HandPoseBox{.left = left, .top = top, .right = right, .bottom = bottom};
+  }
+
+  auto HandPoseModel::compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) -> float {
+    const auto x1 = std::max(box1.left, box2.left);
+    const auto y1 = std::max(box1.top, box2.top);
+    const auto x2 = std::min(box1.right, box2.right);
+    const auto y2 = std::min(box1.bottom, box2.bottom);
+
+    if (x2 <= x1 || y2 <= y1) {
+      return 0.0F;
+    }
+
+    const auto intersection = (x2 - x1) * (y2 - y1);
+    const auto area1 = (box1.right - box1.left) * (box1.bottom - box1.top);
+    const auto area2 = (box2.right - box2.left) * (box2.bottom - box2.top);
+    const auto union_area = area1 + area2 - intersection;
+
+    return union_area > 0.0F ? intersection / union_area : 0.0F;
+  }
+
+  void HandPoseModel::apply_nms() {
+    if (candidates_.size() <= 1) {
+      return;
+    }
+
+    std::sort(candidates_.begin(), candidates_.end(), [](const PalmCandidate& lhs, const PalmCandidate& rhs) {
+      return lhs.detection.confidence > rhs.detection.confidence;
+    });
+
+    auto suppressed = std::vector<bool>(candidates_.size(), false);
+    auto merged = std::vector<PalmCandidate>{};
+    merged.reserve(candidates_.size());
+
+    for (std::size_t i = 0; i < candidates_.size(); ++i) {
+      if (suppressed[i]) {
+        continue;
+      }
+
+      auto group = std::vector<std::size_t>{i};
+      auto total_confidence = candidates_[i].detection.confidence;
+
+      for (std::size_t j = i + 1; j < candidates_.size(); ++j) {
+        if (suppressed[j]) {
+          continue;
+        }
+
+        const auto iou = compute_iou(candidates_[i].detection.box, candidates_[j].detection.box);
+        if (iou > nms_iou_threshold_) {
+          group.push_back(j);
+          total_confidence += candidates_[j].detection.confidence;
+          suppressed[j] = true;
+        }
+      }
+
+      if (group.size() == 1) {
+        merged.push_back(candidates_[i]);
+      } else {
+        auto weighted = PalmCandidate{};
+        weighted.detection.box.left = 0.0F;
+        weighted.detection.box.top = 0.0F;
+        weighted.detection.box.right = 0.0F;
+        weighted.detection.box.bottom = 0.0F;
+        weighted.detection.confidence = 0.0F;
+
+        for (std::size_t k = 0; k < 14; ++k) {
+          weighted.palm_keypoints[k] = 0.0F;
+        }
+
+        for (const auto idx : group) {
+          const auto& candidate = candidates_[idx];
+          const auto weight = candidate.detection.confidence / total_confidence;
+
+          weighted.detection.box.left += candidate.detection.box.left * weight;
+          weighted.detection.box.top += candidate.detection.box.top * weight;
+          weighted.detection.box.right += candidate.detection.box.right * weight;
+          weighted.detection.box.bottom += candidate.detection.box.bottom * weight;
+          weighted.detection.confidence += candidate.detection.confidence * weight;
+
+          for (std::size_t k = 0; k < 14; ++k) {
+            weighted.palm_keypoints[k] += candidate.palm_keypoints[k] * weight;
+          }
+        }
+
+        weighted.detection.class_id = candidates_[i].detection.class_id;
+        weighted.detection.present = candidates_[i].detection.present;
+        weighted.detection.is_left_hand = candidates_[i].detection.is_left_hand;
+        weighted.detection.presence_confidence = candidates_[i].detection.presence_confidence;
+        weighted.handedness_score = candidates_[i].handedness_score;
+
+        merged.push_back(weighted);
+      }
+    }
+
+    candidates_ = std::move(merged);
+  }
+
+  auto HandPoseModel::crop_transform_from_palm_keypoints(const std::array<float, 14>& palm_keypoints,
+                                                         std::uint32_t image_width, std::uint32_t image_height) const
+      -> CropTransform {
+    constexpr auto kWristIdx = std::uint32_t{0};
+    constexpr auto kMiddleMcpIdx = std::uint32_t{2};
+    constexpr auto kIndexMcpIdx = std::uint32_t{4};
+    constexpr auto kRingMcpIdx = std::uint32_t{6};
+
+    const auto wrist_x = palm_keypoints[kWristIdx * 2];
+    const auto wrist_y = palm_keypoints[kWristIdx * 2 + 1];
+    const auto middle_mcp_x = palm_keypoints[kMiddleMcpIdx * 2];
+    const auto middle_mcp_y = palm_keypoints[kMiddleMcpIdx * 2 + 1];
+
+    const auto palm_center_x = (wrist_x + middle_mcp_x) * 0.5F;
+    const auto palm_center_y = (wrist_y + middle_mcp_y) * 0.5F;
+
+    const auto dx = middle_mcp_x - wrist_x;
+    const auto dy = middle_mcp_y - wrist_y;
+    const auto palm_length = std::sqrt(dx * dx + dy * dy);
+
+    const auto index_mcp_x = palm_keypoints[kIndexMcpIdx * 2];
+    const auto index_mcp_y = palm_keypoints[kIndexMcpIdx * 2 + 1];
+    const auto ring_mcp_x = palm_keypoints[kRingMcpIdx * 2];
+    const auto ring_mcp_y = palm_keypoints[kRingMcpIdx * 2 + 1];
+    const auto palm_width_dx = ring_mcp_x - index_mcp_x;
+    const auto palm_width_dy = ring_mcp_y - index_mcp_y;
+    const auto palm_width = std::sqrt(palm_width_dx * palm_width_dx + palm_width_dy * palm_width_dy);
+
+    const auto palm_size = std::max(palm_length, palm_width);
+    auto expansion = base_roi_expansion_;
+
+    if (palm_size < small_hand_threshold_) {
+      expansion = small_hand_expansion_;
+    } else if (palm_size > large_hand_threshold_) {
+      expansion = large_hand_expansion_;
+    }
+
+    const auto dist_to_left = palm_center_x;
+    const auto dist_to_right = static_cast<float>(image_width) - palm_center_x;
+    const auto dist_to_top = palm_center_y;
+    const auto dist_to_bottom = static_cast<float>(image_height) - palm_center_y;
+    const auto min_boundary_dist = std::min({dist_to_left, dist_to_right, dist_to_top, dist_to_bottom});
+
+    if (min_boundary_dist < boundary_margin_) {
+      const auto boundary_factor = std::clamp(min_boundary_dist / boundary_margin_, boundary_min_factor_, 1.0F);
+      expansion *= boundary_factor;
+    }
+
+    const auto roi_size = palm_size * expansion;
+    const auto left =
+        std::clamp(palm_center_x - roi_size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_width) - 1.0F));
+    const auto top =
+        std::clamp(palm_center_y - roi_size * 0.5F, 0.0F, std::max(0.0F, static_cast<float>(image_height) - 1.0F));
+    const auto right = std::clamp(palm_center_x + roi_size * 0.5F, left + 1.0F, static_cast<float>(image_width));
+    const auto bottom = std::clamp(palm_center_y + roi_size * 0.5F, top + 1.0F, static_cast<float>(image_height));
+    const auto crop_size = std::min(right - left, bottom - top);
+
+    return CropTransform{.left = left, .top = top, .size = std::max(1.0F, crop_size)};
+  }
+
+  void HandPoseModel::try_tracking_from_previous_frame(const signlang::video_frontend::VideoFrameMetadata& metadata,
+                                                       const std::uint8_t* payload, std::uint64_t payload_size) {
+    for (auto& tracked : tracked_hands_) {
+      if (current_frame_number_ - tracked.last_seen_frame > max_tracking_gap_) {
+        continue;
+      }
+      if (tracked.presence_confidence < tracking_threshold_) {
+        continue;
+      }
+
+      const auto transform = crop_transform_from_box(tracked.roi, metadata.output_width, metadata.output_height);
+      std::array<HandPoseKeypoint, kHandPoseKeypointCount> keypoints{};
+      float presence = 0.0F;
+      bool is_left = false;
+      float handedness_score = 0.5F;
+
+      if (!extract_landmarks(metadata, payload, payload_size, transform, keypoints, presence, is_left,
+                             handedness_score)) {
+        continue;
+      }
+
+      tracked.smoothed_keypoints = keypoints;
+      tracked.palm_confidence = std::min(tracked.palm_confidence, presence);
+      tracked.presence_confidence = presence;
+      tracked.is_left_hand = is_left;
+      tracked.handedness_score = handedness_score;
+      tracked.last_seen_frame = current_frame_number_;
+
+      auto left = std::numeric_limits<float>::max();
+      auto top = std::numeric_limits<float>::max();
+      auto right = 0.0F;
+      auto bottom = 0.0F;
+      for (const auto& kp : keypoints) {
+        left = std::min(left, kp.x);
+        top = std::min(top, kp.y);
+        right = std::max(right, kp.x);
+        bottom = std::max(bottom, kp.y);
+      }
+      tracked.roi = HandPoseBox{.left = left, .top = top, .right = right, .bottom = bottom};
+    }
+  }
+
+  void HandPoseModel::update_tracked_hands(const std::vector<PalmCandidate>& detected_hands) {
+    for (const auto& detected : detected_hands) {
+      if (!detected.detection.present) {
+        continue;
+      }
+
+      auto matched_idx = -1;
+      auto best_iou = tracking_iou_match_threshold_;
+
+      for (std::size_t i = 0; i < tracked_hands_.size(); ++i) {
+        if (tracked_hands_[i].last_seen_frame != current_frame_number_) {
+          continue;
+        }
+        const auto iou = compute_iou(tracked_hands_[i].roi, detected.detection.box);
+        if (iou > best_iou) {
+          best_iou = iou;
+          matched_idx = static_cast<int>(i);
+        }
+      }
+
+      if (matched_idx >= 0) {
+        auto& t = tracked_hands_[static_cast<std::size_t>(matched_idx)];
+        t.roi = detected.detection.box;
+        t.smoothed_keypoints = detected.detection.keypoints;
+        t.palm_confidence = detected.detection.confidence;
+        t.presence_confidence = detected.detection.presence_confidence;
+        t.is_left_hand = detected.detection.is_left_hand;
+        t.handedness_score = detected.handedness_score;
+      } else {
+        auto new_hand = TrackedHand{
+            .roi = detected.detection.box,
+            .palm_confidence = detected.detection.confidence,
+            .presence_confidence = detected.detection.presence_confidence,
+            .last_seen_frame = current_frame_number_,
+            .is_left_hand = detected.detection.is_left_hand,
+            .handedness_score = detected.handedness_score,
+            .smoothed_keypoints = detected.detection.keypoints,
+        };
+
+        auto added = false;
+        for (auto& tracked : tracked_hands_) {
+          if (current_frame_number_ - tracked.last_seen_frame > max_stale_frames_) {
+            tracked = new_hand;
+            added = true;
+            break;
+          }
+        }
+
+        if (!added && tracked_hands_.size() < hand_slots_) {
+          tracked_hands_.push_back(new_hand);
+        }
+      }
+    }
+  }
+
+  auto HandPoseModel::apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns) -> float {
+    if (!filter.initialized) {
+      filter.x = value;
+      filter.dx = 0.0F;
+      filter.last_time = timestamp_ns;
+      filter.initialized = true;
+      return value;
+    }
+
+    const auto dt = static_cast<float>(timestamp_ns - filter.last_time) / 1e9F;
+    if (dt <= 0.0F || dt > 1.0F) {
+      return value;
+    }
+
+    const auto alpha_d = 1.0F / (1.0F + (1.0F / (2.0F * kPi * filter.d_cutoff * dt)));
+    filter.dx = alpha_d * ((value - filter.x) / dt) + (1.0F - alpha_d) * filter.dx;
+
+    const auto cutoff = filter.min_cutoff + filter.beta * std::abs(filter.dx);
+    const auto alpha = 1.0F / (1.0F + (1.0F / (2.0F * kPi * cutoff * dt)));
+
+    filter.x = alpha * value + (1.0F - alpha) * filter.x;
+    filter.last_time = timestamp_ns;
+
+    return filter.x;
+  }
+
+  void HandPoseModel::smooth_keypoints_hand(std::size_t hand_index, std::uint64_t timestamp_ns) {
+    if (hand_index >= keypoint_filters_.size() || hand_index >= tracked_hands_.size()) {
+      return;
+    }
+
+    auto& filters = keypoint_filters_[hand_index];
+    auto& keypoints = tracked_hands_[hand_index].smoothed_keypoints;
+
+    if (filters.size() < kHandPoseKeypointCount * 3) {
+      return;
+    }
+
+    for (std::uint32_t i = 0; i < kHandPoseKeypointCount; ++i) {
+      keypoints[i].x = apply_one_euro_filter(filters[i * 3], keypoints[i].x, timestamp_ns);
+      keypoints[i].y = apply_one_euro_filter(filters[i * 3 + 1], keypoints[i].y, timestamp_ns);
+      keypoints[i].z = apply_one_euro_filter(filters[i * 3 + 2], keypoints[i].z, timestamp_ns);
+    }
   }
 
 } // namespace signlang::handpose_det

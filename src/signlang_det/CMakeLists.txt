@@ -1,9 +1,7 @@
-set(SIGNLANG_DET_MODEL_DIR
-        ${SIGNLANG_MODEL_ROOT}/signlang
-        CACHE PATH "Directory containing sign language LSTM RKNN model assets")
-set(SIGNLANG_DET_MODEL_FILE ${SIGNLANG_DET_MODEL_DIR}/signlang.rknn)
-set(SIGNLANG_DET_PROTOTYPES_FILE ${SIGNLANG_DET_MODEL_DIR}/prototypes.sqlite)
-set(SIGNLANG_DET_INSTALL_MODEL_DIR models/signlang)
+set(SIGNLANG_DET_MODEL_FILE ${SIGNLANG_BILSTM_MODEL_FILE})
+set(SIGNLANG_DET_PROTOTYPES_FILE ${SIGNLANG_PROTOTYPES_FILE})
+set(SIGNLANG_DET_INSTALL_MODEL_DIR models/bilstm)
+set(SIGNLANG_DET_INSTALL_CONF_DIR conf)
 
 if(NOT TARGET signlang::rknn_runtime)
     message(STATUS "Skipping signlang_eyes_signlang_det: RKNN runtime target not available")
@@ -46,15 +44,13 @@ target_link_libraries(signlang_eyes_signlang_det PRIVATE
 add_custom_command(TARGET signlang_eyes_signlang_det POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_CONF_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SIGNLANG_DET_MODEL_FILE}
-        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/signlang.rknn"
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/biltsm.rknn"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SIGNLANG_DET_PROTOTYPES_FILE}
-        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_MODEL_DIR}/prototypes.sqlite")
+        "$<TARGET_FILE_DIR:signlang_eyes_signlang_det>/${SIGNLANG_DET_INSTALL_CONF_DIR}/prototypes.sqlite")
 
 install(TARGETS signlang_eyes_signlang_det DESTINATION bin)
-install(FILES
-        ${SIGNLANG_DET_MODEL_FILE}
-        ${SIGNLANG_DET_PROTOTYPES_FILE}
-        DESTINATION ${SIGNLANG_DET_INSTALL_MODEL_DIR})
