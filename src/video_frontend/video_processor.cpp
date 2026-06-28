@@ -15,9 +15,10 @@ namespace signlang::video_frontend {
   namespace {
 
     constexpr auto kYuyvBytesPerPixel = std::uint32_t{2};
+    constexpr auto kRgbBytesPerPixel = std::uint32_t{3};
 
-    auto checked_size_bytes(VideoFormat format, std::uint32_t bytes_per_pixel, const char* label) -> std::uint32_t {
-      const auto size_bytes = static_cast<std::uint64_t>(format.width) * format.height * bytes_per_pixel;
+    auto checked_rgb_size_bytes(VideoFormat format, const char* label) -> std::uint32_t {
+      const auto size_bytes = static_cast<std::uint64_t>(format.width) * format.height * kRgbBytesPerPixel;
       if (size_bytes > std::numeric_limits<std::uint32_t>::max()) {
         throw std::runtime_error(std::string{label} + " video frame exceeds supported payload size");
       }
@@ -85,11 +86,11 @@ namespace signlang::video_frontend {
   }
 
   auto VideoProcessor::rgb_output_size_bytes() const -> std::uint32_t {
-    return checked_size_bytes(output_format_, kRgbBytesPerPixel, "RGB output");
+    return checked_rgb_size_bytes(output_format_, "RGB output");
   }
 
   auto VideoProcessor::rgb_capture_size_bytes() const -> std::uint32_t {
-    return checked_size_bytes(capture_format_, kRgbBytesPerPixel, "RGB capture");
+    return checked_rgb_size_bytes(capture_format_, "RGB capture");
   }
 
   void VideoProcessor::yuyv_to_resized_rgb(const CapturedVideoFrame& captured_frame,
@@ -130,7 +131,7 @@ namespace signlang::video_frontend {
                                   .y = 0,
                                   .width = static_cast<int>(output_format_.width),
                                   .height = static_cast<int>(output_format_.height)};
-    const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+    constexpr auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
     const auto usage = IM_SYNC | (mirror_output_ ? IM_HAL_TRANSFORM_FLIP_H : 0);
 
     const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, usage);
@@ -202,7 +203,7 @@ namespace signlang::video_frontend {
                                   .y = 0,
                                   .width = static_cast<int>(output_format_.width),
                                   .height = static_cast<int>(output_format_.height)};
-    const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+    constexpr auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
     const auto usage = IM_SYNC | (mirror_output_ ? IM_HAL_TRANSFORM_FLIP_H : 0);
 
     const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, usage);

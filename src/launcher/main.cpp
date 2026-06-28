@@ -237,12 +237,6 @@ namespace {
     }
   }
 
-  void add_opt_bool_true(std::vector<std::string>& args, const char* flag, const std::optional<bool>& val) {
-    if (val && *val) {
-      args.emplace_back(flag);
-    }
-  }
-
   void add_opt_bool_assignment(std::vector<std::string>& args, const char* flag, const std::optional<bool>& val) {
     if (val) {
       args.emplace_back(std::string{flag} + "=" + (*val ? "true" : "false"));
@@ -390,12 +384,12 @@ namespace {
 
   auto resolve_config_path(const std::string& config_path, const std::filesystem::path& invocation_cwd)
       -> std::filesystem::path {
-    const auto path = std::filesystem::path{config_path};
+    auto path = std::filesystem::path{config_path};
     if (path.is_absolute()) {
       return path;
     }
 
-    const auto invocation_path = invocation_cwd / path;
+    auto invocation_path = invocation_cwd / path;
     std::error_code error;
     if (std::filesystem::exists(invocation_path, error) && !error) {
       return invocation_path;
@@ -405,9 +399,7 @@ namespace {
   }
 
   void sleep_before_restart() {
-    struct timespec ts {
-      .tv_sec = 1, .tv_nsec = 0
-    };
+    struct timespec ts{.tv_sec = 1, .tv_nsec = 0};
     nanosleep(&ts, nullptr);
   }
 
@@ -596,7 +588,10 @@ static auto build_signlang_manager_args(const toml::table& cfg) -> std::vector<s
     add_opt_int(args, "--max-notify-payload", opt_int(*tbl, "max_notify_payload"));
     add_opt_int(args, "--max-upload-bytes", opt_int(*tbl, "max_upload_bytes"));
     add_opt_str(args, "--npu-core", opt_string(*tbl, "npu_core"));
-    add_opt_bool_true(args, "--enable-streaming-by-default", opt_bool(*tbl, "enable_streaming_by_default"));
+    if (const auto enable_streaming = opt_bool(*tbl, "enable_streaming_by_default");
+        enable_streaming && *enable_streaming) {
+      args.emplace_back("--enable-streaming-by-default");
+    }
   }
 
   return args;
@@ -662,9 +657,7 @@ static auto run_modules_once(const std::vector<ModuleEntry>& modules) -> bool {
     }
 
     if (pid == 0) {
-      struct timespec ts {
-        .tv_sec = 0, .tv_nsec = 500000000
-      };
+      struct timespec ts{.tv_sec = 0, .tv_nsec = 500000000};
       nanosleep(&ts, nullptr);
       continue;
     }

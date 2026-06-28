@@ -30,7 +30,7 @@ namespace signlang::env_sound_det {
 
     auto receive_available(AudioRingBuffer& ring_buffer) -> AudioReceiveStats;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -52,7 +52,7 @@ namespace signlang::env_sound_det {
     auto operator=(IpcStateControlClient&&) -> IpcStateControlClient& = delete;
 
     void enter_dangerous_sound_state() const;
-    auto has_server() const -> bool;
+    [[nodiscard]] auto has_server() const -> bool;
 
   private:
     using StateControlService =

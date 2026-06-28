@@ -20,7 +20,7 @@ namespace signlang::state_machine {
     IpcStatePublisher(IpcStatePublisher&&) = delete;
     auto operator=(IpcStatePublisher&&) -> IpcStatePublisher& = delete;
 
-    auto current_state() const -> AppState;
+    [[nodiscard]] auto current_state() const -> AppState;
     void set_state(AppState state);
 
   private:

@@ -30,7 +30,7 @@ namespace signlang::speech_asr {
 
     auto receive_available(AudioRingBuffer& ring_buffer) -> AudioReceiveStats;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -52,7 +52,7 @@ namespace signlang::speech_asr {
     auto operator=(IpcResultPublisher&&) -> IpcResultPublisher& = delete;
 
     void publish(const SpeechAsrResult& result);
-    auto has_subscribers() const -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
 
   private:
     using ResultService = iox2::PortFactoryPublishSubscribe<iox2::ServiceType::Ipc, SpeechAsrResult, void>;

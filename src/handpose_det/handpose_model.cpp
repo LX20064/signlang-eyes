@@ -228,7 +228,7 @@ namespace signlang::handpose_det {
           wrapbuffer_handle(dst_handle, static_cast<int>(dst_width), static_cast<int>(dst_height), RK_FORMAT_RGB_888);
       const auto dst_rect =
           im_rect{.x = 0, .y = 0, .width = static_cast<int>(dst_width), .height = static_cast<int>(dst_height)};
-      const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+      constexpr auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
       const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, IM_SYNC);
 
       releasebuffer_handle(dst_handle);
@@ -323,14 +323,14 @@ namespace signlang::handpose_det {
     RknnModel(const RknnModel&) = delete;
     auto operator=(const RknnModel&) -> RknnModel& = delete;
 
-    auto width() const -> std::uint32_t { return input_width; }
-    auto height() const -> std::uint32_t { return input_height; }
+    [[nodiscard]] auto width() const -> std::uint32_t { return input_width; }
+    [[nodiscard]] auto height() const -> std::uint32_t { return input_height; }
 
-    auto input_stride_width_pixels() const -> std::uint32_t {
+    [[nodiscard]] auto input_stride_width_pixels() const -> std::uint32_t {
       return input_attrs[0].w_stride == 0 ? width() : input_attrs[0].w_stride;
     }
 
-    auto input_data() -> std::uint8_t* { return static_cast<std::uint8_t*>(input_mem->virt_addr); }
+    [[nodiscard]] auto input_data() const -> std::uint8_t* { return static_cast<std::uint8_t*>(input_mem->virt_addr); }
 
     void run() {
       checked_ret(rknn_mem_sync(context, input_mem, RKNN_MEMORY_SYNC_TO_DEVICE), "rknn_mem_sync(input)");
@@ -340,7 +340,7 @@ namespace signlang::handpose_det {
       }
     }
 
-    auto output_value(std::uint32_t output_index, std::uint64_t offset) const -> float {
+    [[nodiscard]] auto output_value(std::uint32_t output_index, std::uint64_t offset) const -> float {
       return tensor_value(output_attrs[output_index], output_mems[output_index], offset);
     }
 
@@ -798,7 +798,7 @@ namespace signlang::handpose_det {
     candidate.detection.box = HandPoseBox{.left = left, .top = top, .right = right, .bottom = bottom};
   }
 
-  auto HandPoseModel::compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) const -> float {
+  auto HandPoseModel::compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) -> float {
     const auto x1 = std::max(box1.left, box2.left);
     const auto y1 = std::max(box1.top, box2.top);
     const auto x2 = std::min(box1.right, box2.right);

@@ -94,7 +94,7 @@ namespace signlang::handpose_det {
     void apply_nms();
     auto should_run_full_frame_detection(std::uint32_t tracked_count) const -> bool;
 
-    auto compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) const -> float;
+    [[nodiscard]] static auto compute_iou(const HandPoseBox& box1, const HandPoseBox& box2) -> float;
 
     auto crop_transform_from_box(const HandPoseBox& box, std::uint32_t image_width, std::uint32_t image_height) const
         -> CropTransform;
@@ -102,7 +102,8 @@ namespace signlang::handpose_det {
     auto crop_transform_from_palm_keypoints(const std::array<float, 14>& palm_keypoints, std::uint32_t image_width,
                                             std::uint32_t image_height) const -> CropTransform;
 
-    auto apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns) -> float;
+    [[nodiscard]] static auto apply_one_euro_filter(OneEuroFilter& filter, float value, std::uint64_t timestamp_ns)
+        -> float;
 
     void smooth_keypoints_hand(std::size_t hand_index, std::uint64_t timestamp_ns);
     void ensure_source_dma_buffer(std::uint64_t required_size) const;

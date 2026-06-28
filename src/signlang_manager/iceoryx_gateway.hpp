@@ -26,7 +26,7 @@ namespace signlang::signlang_manager {
     template <typename Handler>
     auto receive_latest(Handler&& handler) -> bool;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -50,7 +50,7 @@ namespace signlang::signlang_manager {
     IpcPrototypeControlClient(IpcPrototypeControlClient&&) = delete;
     auto operator=(IpcPrototypeControlClient&&) -> IpcPrototypeControlClient& = delete;
 
-    auto request_reload() const -> signlang_det::PrototypeControlResponse;
+    [[nodiscard]] auto request_reload() const -> signlang_det::PrototypeControlResponse;
 
   private:
     using PrototypeControlService =

@@ -12,8 +12,6 @@ namespace signlang::env_sound_det {
 
     constexpr auto kDefaultModelPath = "models/yamnet/yamnet_3s.rknn";
     constexpr auto kDefaultClassMapPath = "models/yamnet/yamnet_class_map.txt";
-    constexpr std::uint32_t kMinWindowMs = 100;
-    constexpr std::uint32_t kMaxWindowMs = 60000;
     constexpr std::uint64_t kDefaultSubscriberBufferSize = 2;
 
     auto parse_npu_core_mask(const std::string& value) -> rknn_core_mask {

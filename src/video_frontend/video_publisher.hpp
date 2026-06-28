@@ -25,7 +25,7 @@ namespace signlang::video_frontend {
 
     void publish(const CapturedVideoFrame& captured_frame, const VideoProcessor& video_processor, std::uint32_t fps,
                  std::uint64_t sequence_number);
-    auto has_subscribers() const -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
 
   private:
     using VideoService =

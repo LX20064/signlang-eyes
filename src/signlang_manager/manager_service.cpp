@@ -18,7 +18,6 @@ namespace signlang::signlang_manager {
     constexpr auto kStatusOk = std::uint16_t{0};
     constexpr auto kStatusBadRequest = std::uint16_t{1};
     constexpr auto kStatusNotFound = std::uint16_t{2};
-    constexpr auto kStatusInternalError = std::uint16_t{3};
     constexpr auto kStatusUnsupported = std::uint16_t{4};
     constexpr auto kStreamPayloadVersionWithSignlang = std::uint8_t{2};
     constexpr auto kMaxRepresentativeSamples = std::size_t{3};
@@ -159,9 +158,8 @@ namespace signlang::signlang_manager {
       return prev_cost[rhs_length] / static_cast<float>(prev_steps[rhs_length]);
     }
 
-    auto select_representative_samples(const std::vector<EncodedSequence>& samples, std::size_t max_samples)
-        -> std::vector<EncodedSequence> {
-      if (samples.size() <= max_samples) {
+    auto select_representative_samples(const std::vector<EncodedSequence>& samples) -> std::vector<EncodedSequence> {
+      if (samples.size() <= kMaxRepresentativeSamples) {
         return samples;
       }
 
@@ -188,7 +186,7 @@ namespace signlang::signlang_manager {
       };
 
       auto medoids = std::vector<std::size_t>{};
-      while (medoids.size() < max_samples) {
+      while (medoids.size() < kMaxRepresentativeSamples) {
         auto best_index = std::size_t{0};
         auto best_cost = std::numeric_limits<float>::infinity();
         for (std::size_t candidate = 0; candidate < count; ++candidate) {
@@ -445,7 +443,9 @@ namespace signlang::signlang_manager {
     if (!deleted) {
       return make_response(request, kStatusNotFound, message_payload("gesture not found"));
     }
-    prototype_control_.request_reload();
+    const auto reload_response = prototype_control_.request_reload();
+    spdlog::debug("Reloaded signlang prototypes after delete: gestures={}, samples={}",
+                  reload_response.loaded_gesture_count, reload_response.loaded_sample_count);
     return make_response(request, kStatusOk);
   }
 
@@ -518,7 +518,9 @@ namespace signlang::signlang_manager {
 
     const auto gesture_id = encode_uploaded_gesture(*upload_);
     upload_.reset();
-    prototype_control_.request_reload();
+    const auto reload_response = prototype_control_.request_reload();
+    spdlog::debug("Reloaded signlang prototypes after upload: gestures={}, samples={}",
+                  reload_response.loaded_gesture_count, reload_response.loaded_sample_count);
 
     auto payload = std::vector<std::uint8_t>{};
     append_u32(payload, gesture_id);
@@ -561,7 +563,7 @@ namespace signlang::signlang_manager {
     const auto existing_sample_count = candidate_samples.size();
     candidate_samples.insert(candidate_samples.end(), uploaded_samples.begin(), uploaded_samples.end());
 
-    const auto representative_samples = select_representative_samples(candidate_samples, kMaxRepresentativeSamples);
+    const auto representative_samples = select_representative_samples(candidate_samples);
     const auto gesture_id = database_.replace_gesture_samples(session.gesture_name, representative_samples);
     spdlog::info(
         "Stored uploaded gesture '{}' as id {}; uploaded_windows={}, existing_samples={}, stored_representatives={}",

@@ -22,17 +22,15 @@ namespace signlang::video_frontend {
     VideoProcessor(VideoProcessor&&) = delete;
     auto operator=(VideoProcessor&&) -> VideoProcessor& = delete;
 
-    auto capture_format() const -> VideoFormat;
-    auto output_format() const -> VideoFormat;
-    auto max_output_size_bytes(std::uint32_t capture_max_frame_size_bytes) const -> std::uint32_t;
-    auto output_size_bytes(const CapturedVideoFrame& captured_frame) const -> std::uint32_t;
+    [[nodiscard]] auto capture_format() const -> VideoFormat;
+    [[nodiscard]] auto output_format() const -> VideoFormat;
+    [[nodiscard]] auto max_output_size_bytes(std::uint32_t capture_max_frame_size_bytes) const -> std::uint32_t;
+    [[nodiscard]] auto output_size_bytes(const CapturedVideoFrame& captured_frame) const -> std::uint32_t;
     void process(const CapturedVideoFrame& captured_frame, iox2::bb::MutableSlice<std::uint8_t> output_payload) const;
 
   private:
-    static constexpr auto kRgbBytesPerPixel = std::uint32_t{3};
-
-    auto rgb_output_size_bytes() const -> std::uint32_t;
-    auto rgb_capture_size_bytes() const -> std::uint32_t;
+    [[nodiscard]] auto rgb_output_size_bytes() const -> std::uint32_t;
+    [[nodiscard]] auto rgb_capture_size_bytes() const -> std::uint32_t;
     void yuyv_to_resized_rgb(const CapturedVideoFrame& captured_frame,
                              iox2::bb::MutableSlice<std::uint8_t> output_payload) const;
     void mjpeg_to_resized_rgb(const CapturedVideoFrame& captured_frame,

@@ -24,7 +24,7 @@ namespace signlang::signlang_det {
     template <typename Handler>
     auto receive_latest(Handler&& handler) -> bool;
 
-    auto wait_for_work() -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
 
   private:
     static auto create_node() -> iox2::Node<iox2::ServiceType::Ipc>;
@@ -49,7 +49,7 @@ namespace signlang::signlang_det {
     auto operator=(IpcSignlangPublisher&&) -> IpcSignlangPublisher& = delete;
 
     void publish(const SignlangResult& result);
-    auto has_subscribers() const -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
 
   private:
     using ResultService = iox2::PortFactoryPublishSubscribe<iox2::ServiceType::Ipc, SignlangResult, void>;

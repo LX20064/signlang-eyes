@@ -17,7 +17,7 @@ namespace signlang::signlang_det {
         throw std::invalid_argument("overlap_ratio must be in [0.0, 1.0)");
       }
 
-      const auto hop_size = static_cast<std::uint32_t>(sequence_length * (1.0f - overlap_ratio));
+      const auto hop_size = static_cast<std::uint32_t>(static_cast<float>(sequence_length) * (1.0f - overlap_ratio));
       return std::max(sequence_length * 2, sequence_length + hop_size);
     }
 

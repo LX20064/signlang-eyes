@@ -14,6 +14,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace signlang::video_frontend {
@@ -70,10 +71,8 @@ namespace signlang::video_frontend {
 
   } // namespace
 
-  V4l2CaptureDevice::V4l2CaptureDevice(const std::string& device_name, VideoFormatRequest format_request,
-                                       std::uint32_t fps) :
-      device_name_{device_name},
-      format_request_{format_request}, requested_fps_{fps}, device_fd_{-1},
+  V4l2CaptureDevice::V4l2CaptureDevice(std::string device_name, VideoFormatRequest format_request, std::uint32_t fps) :
+      device_name_{std::move(device_name)}, format_request_{format_request}, requested_fps_{fps}, device_fd_{-1},
       format_{.width = 0, .height = 0, .pixel_format = kPixelFormatYuyv}, fps_{fps}, max_frame_size_bytes_{0},
       active_buffer_index_{-1}, streaming_{false} {
     open_device();
@@ -352,7 +351,7 @@ namespace signlang::video_frontend {
     mapped_buffers_.clear();
   }
 
-  void V4l2CaptureDevice::enqueue_buffer(std::uint32_t buffer_index) {
+  void V4l2CaptureDevice::enqueue_buffer(std::uint32_t buffer_index) const {
     v4l2_buffer buffer{};
     buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buffer.memory = V4L2_MEMORY_MMAP;

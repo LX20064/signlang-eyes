@@ -31,7 +31,7 @@ namespace signlang::handpose_det {
 
   class HandPoseTransport {
   public:
-    HandPoseTransport(const std::string& input_service_name, const std::string& output_service_name,
+    HandPoseTransport(std::string input_service_name, const std::string& output_service_name,
                       std::uint64_t subscriber_buffer_size, std::uint32_t hand_slots);
 
     HandPoseTransport(const HandPoseTransport&) = delete;
@@ -43,10 +43,10 @@ namespace signlang::handpose_det {
     auto receive_latest(Handler&& handler) -> bool;
 
     void publish(const signlang::video_frontend::VideoFrameMetadata& source_metadata, std::uint64_t sequence_number,
-                 HandPosePublishInfo publish_info, const HandPoseDetection* detections);
+                 const HandPosePublishInfo& publish_info, const HandPoseDetection* detections);
 
-    auto wait_for_work() -> bool;
-    auto has_subscribers() const -> bool;
+    [[nodiscard]] auto wait_for_work() -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
     void detach_upstream();
     void ensure_upstream_attached();
 
@@ -116,7 +116,7 @@ namespace signlang::handpose_det {
   }
 
   inline void HandPoseTransport::publish(const signlang::video_frontend::VideoFrameMetadata& source_metadata,
-                                         std::uint64_t sequence_number, HandPosePublishInfo publish_info,
+                                         std::uint64_t sequence_number, const HandPosePublishInfo& publish_info,
                                          const HandPoseDetection* detections) {
     if (publish_info.detection_count > hand_slots_) {
       throw std::runtime_error("Hand pose detection count exceeds configured hand slots");

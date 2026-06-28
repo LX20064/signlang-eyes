@@ -6,6 +6,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace signlang::audio_frontend {
@@ -69,10 +70,9 @@ namespace signlang::audio_frontend {
 
   } // namespace
 
-  AlsaCaptureDevice::AlsaCaptureDevice(const std::string& device_name, AudioFormatRequest format_request,
+  AlsaCaptureDevice::AlsaCaptureDevice(std::string device_name, AudioFormatRequest format_request,
                                        std::uint32_t publish_period_ms) :
-      device_name_{device_name},
-      format_request_{format_request},
+      device_name_{std::move(device_name)}, format_request_{format_request},
       format_{.sample_rate_hz = kDefaultSampleRateHz, .channel_count = kDefaultChannelCount},
       publish_period_ms_{publish_period_ms} {
     snd_pcm_t* pcm_handle = nullptr;

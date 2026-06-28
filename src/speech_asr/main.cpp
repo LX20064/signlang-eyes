@@ -17,12 +17,13 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 
   auto ring_capacity_samples(std::uint64_t window_sample_count, std::uint64_t hop_sample_count) -> std::uint64_t {
     const auto minimum_capacity = window_sample_count + std::max(window_sample_count, hop_sample_count);
-    const auto one_second = static_cast<std::uint64_t>(signlang::speech_asr::kWhisperSampleRateHz);
+    constexpr auto one_second = static_cast<std::uint64_t>(signlang::speech_asr::kWhisperSampleRateHz);
     return std::max(minimum_capacity, window_sample_count + one_second);
   }
 
@@ -95,7 +96,7 @@ auto main(int argc, char** argv) -> int {
       {
         const std::lock_guard<std::mutex> lock{worker_error_mutex};
         if (worker_error == nullptr) {
-          worker_error = error;
+          worker_error = std::move(error);
         }
       }
       should_stop.store(true);
@@ -134,7 +135,6 @@ auto main(int argc, char** argv) -> int {
         spdlog::info("Whisper model loaded successfully");
 
         IpcResultPublisher result_publisher{options.result_service_name};
-        AudioWindow audio_window;
         std::optional<std::uint64_t> next_window_start_sample;
         std::uint64_t result_sequence_number = 0;
 
@@ -148,6 +148,7 @@ auto main(int argc, char** argv) -> int {
             continue;
           }
 
+          AudioWindow audio_window;
           if (!audio_buffer.wait_for_window(next_window_start_sample, window_sample_count, hop_sample_count,
                                             should_stop, audio_window)) {
             break;

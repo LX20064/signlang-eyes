@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 
@@ -146,7 +147,7 @@ namespace {
       return response;
     };
     const auto hop_frames = std::max<std::uint32_t>(
-        1, static_cast<std::uint32_t>(options.sequence_length * (1.0f - options.overlap_ratio)));
+        1, static_cast<std::uint32_t>(static_cast<float>(options.sequence_length) * (1.0f - options.overlap_ratio)));
     auto next_window_end_seq = std::uint64_t{hop_frames};
     auto last_published_gesture_id = std::optional<std::uint32_t>{};
     auto last_published_gesture_time = std::chrono::steady_clock::time_point{};
@@ -241,7 +242,7 @@ auto main(int argc, char** argv) -> int {
       {
         const std::lock_guard lock{worker_error_mutex};
         if (worker_error == nullptr) {
-          worker_error = error;
+          worker_error = std::move(error);
         }
       }
       should_stop.store(true);

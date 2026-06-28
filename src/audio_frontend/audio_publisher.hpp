@@ -24,7 +24,7 @@ namespace signlang::audio_frontend {
 
     void publish(const std::vector<std::int16_t>& input_samples, AudioProcessor& audio_processor,
                  std::uint64_t sequence_number);
-    auto has_subscribers() const -> bool;
+    [[nodiscard]] auto has_subscribers() const -> bool;
 
   private:
     using AudioService = iox2::PortFactoryPublishSubscribe<iox2::ServiceType::Ipc, AudioFrame, void>;

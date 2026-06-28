@@ -1,6 +1,8 @@
 #ifndef SIGNLANG_EYES_SIGNLANG_MANAGER_BLUETOOTH_GATT_SERVER_HPP
 #define SIGNLANG_EYES_SIGNLANG_MANAGER_BLUETOOTH_GATT_SERVER_HPP
 
+#include <gio/gio.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -8,10 +10,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
-using GDBusConnection = struct _GDBusConnection;
-using GDBusNodeInfo = struct _GDBusNodeInfo;
-using GMainLoop = struct _GMainLoop;
 
 namespace signlang::signlang_manager {
 
@@ -35,19 +33,19 @@ namespace signlang::signlang_manager {
 
     void start(PacketHandler handler);
     void stop();
-    auto request_start_notify(const char* sender) -> bool;
+    [[nodiscard]] auto request_start_notify(const char* sender) -> bool;
     void request_stop_notify(const char* sender);
     void release_notify_owner_if_matches(const char* owner_name);
     void handle_write_value(const std::vector<std::uint8_t>& value);
     void notify_packet(const std::vector<std::uint8_t>& packet);
-    auto notifications_enabled() const -> bool;
-    auto max_notify_payload() const -> std::uint32_t;
-    auto local_name() const -> const std::string&;
+    [[nodiscard]] auto notifications_enabled() const -> bool;
+    [[nodiscard]] auto max_notify_payload() const -> std::uint32_t;
+    [[nodiscard]] auto local_name() const -> const std::string&;
 
   private:
     void register_objects();
     void unregister_objects();
-    auto read_adapter_powered() -> bool;
+    [[nodiscard]] auto read_adapter_powered() -> bool;
     void set_adapter_powered(bool powered);
     void reset_adapter();
     void ensure_adapter_powered();

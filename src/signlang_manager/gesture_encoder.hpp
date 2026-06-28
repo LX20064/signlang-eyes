@@ -22,9 +22,9 @@ namespace signlang::signlang_manager {
 
     ~GestureEncoder();
 
-    auto encode(const std::vector<FeatureVector>& sequence) -> EncodedSequence;
-    auto sequence_length() const -> std::uint32_t;
-    auto embedding_dim() const -> std::uint32_t;
+    [[nodiscard]] auto encode(const std::vector<FeatureVector>& sequence) -> EncodedSequence;
+    [[nodiscard]] auto sequence_length() const -> std::uint32_t;
+    [[nodiscard]] auto embedding_dim() const -> std::uint32_t;
 
   private:
     void load_model(const std::string& model_path, rknn_core_mask npu_core);

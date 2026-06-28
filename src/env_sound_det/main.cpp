@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 namespace {
 
@@ -37,7 +38,7 @@ namespace {
 
   auto ring_capacity_samples(std::uint64_t window_sample_count, std::uint64_t hop_sample_count) -> std::uint64_t {
     const auto minimum_capacity = window_sample_count + std::max(window_sample_count, hop_sample_count);
-    const auto one_second = static_cast<std::uint64_t>(signlang::env_sound_det::kYamnetSampleRateHz);
+    constexpr auto one_second = static_cast<std::uint64_t>(signlang::env_sound_det::kYamnetSampleRateHz);
     return std::max(minimum_capacity, window_sample_count + one_second);
   }
 
@@ -75,7 +76,7 @@ auto main(int argc, char** argv) -> int {
       {
         const std::lock_guard<std::mutex> lock{worker_error_mutex};
         if (worker_error == nullptr) {
-          worker_error = error;
+          worker_error = std::move(error);
         }
       }
       should_stop.store(true);
@@ -115,7 +116,6 @@ auto main(int argc, char** argv) -> int {
         spdlog::info("YAMNet model loaded successfully");
 
         IpcStateControlClient state_control_client{options.state_control_service_name};
-        AudioWindow audio_window;
         std::optional<std::uint64_t> next_window_start_sample;
 
         while (!should_stop.load()) {
@@ -128,6 +128,7 @@ auto main(int argc, char** argv) -> int {
             continue;
           }
 
+          AudioWindow audio_window;
           if (!audio_buffer.wait_for_window(next_window_start_sample, window_sample_count, hop_sample_count,
                                             should_stop, audio_window)) {
             break;

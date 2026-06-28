@@ -20,11 +20,11 @@ namespace signlang::signlang_det {
     constexpr auto kPrototypeSchemaVersion = int{1};
     constexpr const char* kFloat32Dtype = "f32";
 
-    auto read_meta_int(SQLite::Database& database, const char* key, int default_value) -> int {
+    auto read_meta_int(SQLite::Database& database, const char* key) -> int {
       auto query = SQLite::Statement{database, "SELECT value FROM meta WHERE key = ?"};
       query.bind(1, key);
       if (!query.executeStep()) {
-        return default_value;
+        return 0;
       }
 
       const auto value = query.getColumn(0).getString();
@@ -67,12 +67,12 @@ namespace signlang::signlang_det {
       throw std::runtime_error("Prototype SQLite database is missing required tables: " + path);
     }
 
-    const auto schema_version = read_meta_int(database, "schema_version", 0);
+    const auto schema_version = read_meta_int(database, "schema_version");
     if (schema_version != kPrototypeSchemaVersion) {
       throw std::runtime_error("Unsupported prototype SQLite schema version: " + std::to_string(schema_version));
     }
 
-    const auto meta_embedding_dim = read_meta_int(database, "embedding_dim", 0);
+    const auto meta_embedding_dim = read_meta_int(database, "embedding_dim");
     if (meta_embedding_dim <= 0) {
       throw std::runtime_error("Prototype SQLite database has invalid embedding_dim metadata");
     }
@@ -196,8 +196,8 @@ namespace signlang::signlang_det {
     return candidates;
   }
 
-  auto DtwMatcher::compute_frame_distance(const std::vector<float>& query_frame,
-                                          const std::vector<float>& sample_frame) const -> float {
+  auto DtwMatcher::compute_frame_distance(const std::vector<float>& query_frame, const std::vector<float>& sample_frame)
+      -> float {
     if (query_frame.size() != sample_frame.size() || query_frame.empty()) {
       return std::numeric_limits<float>::infinity();
     }

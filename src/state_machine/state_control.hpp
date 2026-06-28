@@ -52,16 +52,17 @@ namespace signlang::state_machine {
 
     explicit StateController(AppState initial_base_state);
 
-    auto current_base_state() const -> AppState;
-    auto current_published_state() const -> AppState;
-    auto current_special_state_value() const -> std::int32_t;
+    [[nodiscard]] auto current_base_state() const -> AppState;
+    [[nodiscard]] auto current_published_state() const -> AppState;
+    [[nodiscard]] auto current_special_state_value() const -> std::int32_t;
 
-    auto handle_request(const StateControlRequest& request, Clock::time_point now) -> StateControlResponse;
-    auto expire_special_state(Clock::time_point now) -> bool;
+    [[nodiscard]] auto handle_request(const StateControlRequest& request, Clock::time_point now)
+        -> StateControlResponse;
+    [[nodiscard]] auto expire_special_state(Clock::time_point now) -> bool;
 
   private:
-    auto make_response(bool accepted, StateControlErrorCode error_code) const -> StateControlResponse;
-    auto next_base_state() const -> AppState;
+    [[nodiscard]] auto make_response(bool accepted, StateControlErrorCode error_code) const -> StateControlResponse;
+    [[nodiscard]] auto next_base_state() const -> AppState;
 
     AppState base_state_;
     AppState published_state_;

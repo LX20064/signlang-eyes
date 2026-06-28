@@ -20,27 +20,27 @@ namespace signlang::signlang_det {
   public:
     explicit FeatureExtractor(float min_confidence);
 
-    auto extract(const handpose_det::HandPoseFrameMetadata& metadata, const handpose_det::HandPoseDetection* detections,
-                 std::uint32_t detection_count) -> std::optional<FeatureVector>;
+    [[nodiscard]] auto extract(const handpose_det::HandPoseFrameMetadata& metadata,
+                               const handpose_det::HandPoseDetection* detections, std::uint32_t detection_count)
+        -> std::optional<FeatureVector>;
 
     void reset();
 
   private:
-    auto prepare_hands(const handpose_det::HandPoseDetection* detections, std::uint32_t count) const
+    [[nodiscard]] auto prepare_hands(const handpose_det::HandPoseDetection* detections, std::uint32_t count) const
         -> std::vector<const handpose_det::HandPoseDetection*>;
 
-    auto assign_hands_to_slots(const std::vector<const handpose_det::HandPoseDetection*>& hands)
+    [[nodiscard]] static auto assign_hands_to_slots(const std::vector<const handpose_det::HandPoseDetection*>& hands)
         -> std::array<const handpose_det::HandPoseDetection*, kMaxHandCount>;
 
     auto extract_single_hand(const handpose_det::HandPoseDetection& hand, std::uint32_t hand_index,
                              bool sequence_continuous) -> HandFeatures;
 
-    auto compute_bounding_box_scale(
-        const std::array<handpose_det::HandPoseKeypoint, handpose_det::kHandPoseKeypointCount>& keypoints) const
-        -> float;
+    [[nodiscard]] static auto compute_bounding_box_scale(
+        const std::array<handpose_det::HandPoseKeypoint, handpose_det::kHandPoseKeypointCount>& keypoints) -> float;
 
     float min_confidence_;
-    std::array<HandSlot, kMaxHandCount> prev_hands_;
+    std::array<HandSlot, kMaxHandCount> prev_hands_{};
     std::uint64_t prev_sequence_number_{0};
   };
 

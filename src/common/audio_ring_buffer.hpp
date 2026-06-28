@@ -32,18 +32,18 @@ namespace signlang::common {
     AudioRingBuffer(AudioRingBuffer&&) = delete;
     auto operator=(AudioRingBuffer&&) -> AudioRingBuffer& = delete;
 
-    auto push(const signlang::audio_frontend::AudioFrame& frame) -> bool;
-    auto wait_for_window(std::optional<std::uint64_t>& requested_start_sample_index, std::uint64_t window_sample_count,
-                         std::uint64_t hop_sample_count, const std::atomic_bool& should_stop,
-                         AudioWindow& output_window) -> bool;
+    [[nodiscard]] auto push(const signlang::audio_frontend::AudioFrame& frame) -> bool;
+    [[nodiscard]] auto wait_for_window(std::optional<std::uint64_t>& requested_start_sample_index,
+                                       std::uint64_t window_sample_count, std::uint64_t hop_sample_count,
+                                       const std::atomic_bool& should_stop, AudioWindow& output_window) -> bool;
     void clear();
     void notify_stop();
 
   private:
-    auto accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) const -> bool;
-    static auto align_to_available_window(std::uint64_t requested_start_sample_index,
-                                          std::uint64_t available_start_sample_index, std::uint64_t hop_sample_count)
-        -> std::uint64_t;
+    [[nodiscard]] auto accepts_metadata(const signlang::audio_frontend::AudioFrame& frame) const -> bool;
+    [[nodiscard]] static auto align_to_available_window(std::uint64_t requested_start_sample_index,
+                                                        std::uint64_t available_start_sample_index,
+                                                        std::uint64_t hop_sample_count) -> std::uint64_t;
     void wait_for_samples(std::uint64_t observed_wake_sequence, const std::atomic_bool& should_stop) const;
 
     std::uint32_t expected_sample_rate_hz_;
@@ -60,8 +60,8 @@ namespace signlang::common {
     std::atomic<std::uint16_t> latest_audio_bits_per_sample_;
   };
 
-  auto samples_for_window_ms(std::uint32_t sample_rate_hz, std::uint32_t window_ms) -> std::uint64_t;
-  auto hop_samples_for_overlap(std::uint64_t window_sample_count, double overlap_ratio) -> std::uint64_t;
+  [[nodiscard]] auto samples_for_window_ms(std::uint32_t sample_rate_hz, std::uint32_t window_ms) -> std::uint64_t;
+  [[nodiscard]] auto hop_samples_for_overlap(std::uint64_t window_sample_count, double overlap_ratio) -> std::uint64_t;
 
 } // namespace signlang::common
 

@@ -56,8 +56,7 @@ namespace signlang::signlang_det {
   }
 
   auto FeatureExtractor::compute_bounding_box_scale(
-      const std::array<handpose_det::HandPoseKeypoint, handpose_det::kHandPoseKeypointCount>& keypoints) const
-      -> float {
+      const std::array<handpose_det::HandPoseKeypoint, handpose_det::kHandPoseKeypointCount>& keypoints) -> float {
     const auto& wrist = keypoints[0];
     auto max_distance = 0.0F;
 

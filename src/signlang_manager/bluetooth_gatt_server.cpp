@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <gio/gio.h>
 #include <glib.h>
 #include <stdexcept>
@@ -136,14 +137,15 @@ namespace signlang::signlang_manager {
       g_variant_builder_add(ifaces, "{sa{sv}}", "org.bluez.GattService1", &props);
     }
 
-    void add_characteristic_interface(GVariantBuilder* ifaces, const char* uuid, const char* const* flags,
-                                      std::size_t flag_count) {
+    template <std::size_t FlagCount>
+    void add_characteristic_interface(GVariantBuilder* ifaces, const char* uuid,
+                                      const char* const (&flags)[FlagCount]) {
       auto props = GVariantBuilder{};
       g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
       g_variant_builder_add(&props, "{sv}", "UUID", g_variant_new_string(uuid));
       g_variant_builder_add(&props, "{sv}", "Service", g_variant_new_object_path(kServicePath));
       g_variant_builder_add(&props, "{sv}", "Value", variant_from_bytes({}));
-      g_variant_builder_add(&props, "{sv}", "Flags", g_variant_new_strv(flags, static_cast<gssize>(flag_count)));
+      g_variant_builder_add(&props, "{sv}", "Flags", g_variant_new_strv(flags, static_cast<gssize>(FlagCount)));
       g_variant_builder_add(ifaces, "{sa{sv}}", "org.bluez.GattCharacteristic1", &props);
     }
 
@@ -159,22 +161,16 @@ namespace signlang::signlang_manager {
       constexpr const char* rx_flags[] = {"write", "write-without-response"};
       auto rx_ifaces = GVariantBuilder{};
       g_variant_builder_init(&rx_ifaces, G_VARIANT_TYPE("a{sa{sv}}"));
-      add_characteristic_interface(&rx_ifaces, kRxUuid, rx_flags, std::size(rx_flags));
+      add_characteristic_interface(&rx_ifaces, kRxUuid, rx_flags);
       g_variant_builder_add(&objects, "{oa{sa{sv}}}", kRxPath, &rx_ifaces);
 
       constexpr const char* tx_flags[] = {"notify", "read"};
       auto tx_ifaces = GVariantBuilder{};
       g_variant_builder_init(&tx_ifaces, G_VARIANT_TYPE("a{sa{sv}}"));
-      add_characteristic_interface(&tx_ifaces, kTxUuid, tx_flags, std::size(tx_flags));
+      add_characteristic_interface(&tx_ifaces, kTxUuid, tx_flags);
       g_variant_builder_add(&objects, "{oa{sa{sv}}}", kTxPath, &tx_ifaces);
 
       return g_variant_new("(a{oa{sa{sv}}})", &objects);
-    }
-
-    auto empty_options() -> GVariant* {
-      auto options = GVariantBuilder{};
-      g_variant_builder_init(&options, G_VARIANT_TYPE("a{sv}"));
-      return g_variant_new("(a{sv})", &options);
     }
 
     auto object_manager_method_call(GDBusConnection*, const gchar*, const gchar*, const gchar*,
@@ -305,11 +301,11 @@ namespace signlang::signlang_manager {
       }
     }
 
-    const auto kObjectManagerVtable = GDBusInterfaceVTable{object_manager_method_call, nullptr, nullptr};
-    const auto kServiceVtable = GDBusInterfaceVTable{nullptr, service_get_property, nullptr};
-    const auto kCharacteristicVtable =
+    constexpr auto kObjectManagerVtable = GDBusInterfaceVTable{object_manager_method_call, nullptr, nullptr};
+    constexpr auto kServiceVtable = GDBusInterfaceVTable{nullptr, service_get_property, nullptr};
+    constexpr auto kCharacteristicVtable =
         GDBusInterfaceVTable{characteristic_method_call, characteristic_get_property, nullptr};
-    const auto kAdvertisementVtable =
+    constexpr auto kAdvertisementVtable =
         GDBusInterfaceVTable{advertisement_method_call, advertisement_get_property, nullptr};
 
   } // namespace

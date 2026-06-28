@@ -484,7 +484,7 @@ namespace signlang::speech_asr {
   }
 
   auto WhisperModel::sample_with_reflect_pad(const float* audio, std::uint32_t audio_sample_count,
-                                             std::uint32_t padded_index) const -> float {
+                                             std::uint32_t padded_index) -> float {
     constexpr auto pad_width = kNfft / 2;
     if (padded_index < pad_width) {
       return audio[std::min<std::uint32_t>(pad_width - 1 - padded_index, audio_sample_count - 1)];
@@ -601,7 +601,8 @@ namespace signlang::speech_asr {
       }
       RknnOutputReleaseGuard output_release_guard{decoder_context_, 1, &output};
 
-      const auto logits_offset = static_cast<std::size_t>(decoder_token_count_ - 1) * vocab_size_;
+      const auto logits_offset =
+          static_cast<std::size_t>(decoder_token_count_ - 1) * static_cast<std::size_t>(vocab_size_);
       auto best_index = std::uint32_t{0};
       auto best_value = decoder_output_[logits_offset];
       for (std::uint32_t token_index = 1; token_index < vocab_size_; ++token_index) {
@@ -659,7 +660,7 @@ namespace signlang::speech_asr {
     return vocab_en_;
   }
 
-  auto WhisperModel::language_token(AsrLanguage language) const -> std::int64_t {
+  auto WhisperModel::language_token(AsrLanguage language) -> std::int64_t {
     switch (language) {
     case AsrLanguage::English:
       return kEnglishToken;
