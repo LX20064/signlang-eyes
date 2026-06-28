@@ -7,7 +7,6 @@
 #include "iox2/iceoryx2.hpp"
 #include "state_machine/state_control.hpp"
 
-#include <cstdint>
 #include <string>
 
 namespace signlang::env_sound_det {

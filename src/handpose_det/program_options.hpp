@@ -2,10 +2,8 @@
 #define SIGNLANG_EYES_HANDPOSE_DET_PROGRAM_OPTIONS_HPP
 
 #include "common/logging.hpp"
-#include "handpose_frame.hpp"
 #include "rknn_api.h"
 
-#include <cstdint>
 #include <string>
 #include <variant>
 

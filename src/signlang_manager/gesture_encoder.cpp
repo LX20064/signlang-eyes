@@ -6,7 +6,6 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
-#include <utility>
 
 namespace signlang::signlang_manager {
   namespace {

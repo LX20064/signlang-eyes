@@ -4,7 +4,6 @@
 #include "audio_frontend/audio_frame.hpp"
 
 #include <atomic>
-#include <cstdint>
 #include <optional>
 #include <vector>
 

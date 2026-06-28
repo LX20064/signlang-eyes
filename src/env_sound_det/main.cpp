@@ -9,7 +9,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <exception>
 #include <mutex>
 #include <optional>

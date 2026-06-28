@@ -2,11 +2,8 @@
 
 #include "common/ipc_utils.hpp"
 
-#include <chrono>
-#include <new>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 
 namespace signlang::speech_asr {

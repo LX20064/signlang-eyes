@@ -1,7 +1,6 @@
 #include "alsa_capture_device.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <limits>
 #include <memory>
 #include <stdexcept>

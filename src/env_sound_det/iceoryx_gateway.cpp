@@ -2,7 +2,6 @@
 
 #include "common/ipc_utils.hpp"
 
-#include <new>
 #include <stdexcept>
 #include <string>
 #include <utility>

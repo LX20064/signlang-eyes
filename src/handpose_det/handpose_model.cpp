@@ -1,4 +1,5 @@
 #include "handpose_model.hpp"
+#include "handpose_selection.hpp"
 
 #include "Float16.h"
 #include "im2d.h"

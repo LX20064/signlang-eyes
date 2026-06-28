@@ -4,7 +4,6 @@
 #include "common/ipc_utils.hpp"
 
 #include <chrono>
-#include <cstdint>
 #include <new>
 #include <stdexcept>
 #include <string>

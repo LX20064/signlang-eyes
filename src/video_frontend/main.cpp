@@ -6,7 +6,6 @@
 #include "video_publisher.hpp"
 
 #include <chrono>
-#include <stdexcept>
 #include <thread>
 
 namespace {

@@ -9,7 +9,6 @@
 #include "prototype_database.hpp"
 
 #include <atomic>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>

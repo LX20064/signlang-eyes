@@ -1,12 +1,10 @@
 #ifndef SIGNLANG_EYES_VIDEO_FRONTEND_VIDEO_PUBLISHER_HPP
 #define SIGNLANG_EYES_VIDEO_FRONTEND_VIDEO_PUBLISHER_HPP
 
-#include "video_format.hpp"
 #include "video_frame.hpp"
 
 #include "iox2/iceoryx2.hpp"
 
-#include <cstdint>
 #include <string>
 
 namespace signlang::video_frontend {

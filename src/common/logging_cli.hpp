@@ -5,12 +5,10 @@
 #include "cxxopts.hpp"
 
 #include <charconv>
-#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 namespace signlang::logging {
 

@@ -4,7 +4,6 @@
 #include "common/logging.hpp"
 #include "rknn_api.h"
 
-#include <cstdint>
 #include <string>
 #include <variant>
 

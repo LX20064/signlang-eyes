@@ -2,7 +2,6 @@
 #define SIGNLANG_EYES_HANDPOSE_DET_HANDPOSE_MODEL_HPP
 
 #include "handpose_frame.hpp"
-#include "handpose_selection.hpp"
 #include "program_options.hpp"
 #include "rknn_api.h"
 #include "video_frontend/video_frame.hpp"

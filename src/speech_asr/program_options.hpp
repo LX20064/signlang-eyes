@@ -5,7 +5,6 @@
 #include "rknn_api.h"
 #include "speech_asr_result.hpp"
 
-#include <cstdint>
 #include <string>
 #include <variant>
 

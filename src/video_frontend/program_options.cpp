@@ -3,7 +3,6 @@
 #include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
-#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>

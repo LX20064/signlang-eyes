@@ -7,7 +7,6 @@
 #include "rknn_api.h"
 
 #include <array>
-#include <cstdint>
 #include <string>
 #include <vector>
 

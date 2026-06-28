@@ -4,7 +4,6 @@
 #include "audio_format.hpp"
 #include "common/logging.hpp"
 
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>

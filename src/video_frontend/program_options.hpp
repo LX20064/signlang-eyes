@@ -4,7 +4,6 @@
 #include "common/logging.hpp"
 #include "video_format.hpp"
 
-#include <cstdint>
 #include <string>
 #include <variant>
 

@@ -7,7 +7,6 @@
 #include "audio_frontend/audio_frame.hpp"
 #include "iox2/iceoryx2.hpp"
 
-#include <cstdint>
 #include <string>
 
 namespace signlang::speech_asr {

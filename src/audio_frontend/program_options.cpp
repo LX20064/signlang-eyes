@@ -6,7 +6,6 @@
 #include "cxxopts.hpp"
 
 #include <cmath>
-#include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>

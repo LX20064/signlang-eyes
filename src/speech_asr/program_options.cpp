@@ -5,7 +5,6 @@
 #include "common/logging_cli.hpp"
 #include "cxxopts.hpp"
 
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 

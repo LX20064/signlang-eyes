@@ -7,7 +7,6 @@
 #include "iox2/bb/slice.hpp"
 #include "turbojpeg.h"
 
-#include <cstdint>
 #include <vector>
 
 namespace signlang::video_frontend {

@@ -1,7 +1,6 @@
 #ifndef SIGNLANG_EYES_HANDPOSE_DET_HANDPOSE_SELECTION_HPP
 #define SIGNLANG_EYES_HANDPOSE_DET_HANDPOSE_SELECTION_HPP
 
-#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>

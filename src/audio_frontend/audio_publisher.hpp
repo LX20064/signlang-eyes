@@ -5,7 +5,6 @@
 
 #include "iox2/iceoryx2.hpp"
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
