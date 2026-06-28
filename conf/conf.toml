@@ -22,6 +22,7 @@ capture_channels = 2               # Requested capture channel count; omit to au
 device = "/dev/video21"            # V4L2 camera device path
 output_width = 640                 # Published output width; omit to match capture width
 output_height = 480                # Published output height; omit to match capture height
+# mirror_output = false            # Horizontally mirror frames before publishing
 # capture_width = 1920             # Requested capture width; omit to use largest supported camera mode
 # capture_height = 1080            # Requested capture height; omit to use largest supported camera mode
 # fps = 30                         # Requested frame rate

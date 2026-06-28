@@ -225,6 +225,7 @@ capture_channels = 2       # Stereo
 device = "/dev/video21"    # V4L2 camera
 output_width = 640         # Published width
 output_height = 480        # Published height
+mirror_output = false      # Horizontally mirror published frames
 
 [speech_asr]
 language = "zh"            # Chinese recognition

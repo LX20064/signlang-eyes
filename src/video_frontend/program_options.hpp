@@ -16,6 +16,7 @@ namespace signlang::video_frontend {
     VideoFormatRequest capture_format;
     VideoFormatRequest output_format;
     std::uint32_t fps;
+    bool mirror_output;
     signlang::logging::Options logging;
   };
 

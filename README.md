@@ -173,6 +173,7 @@ capture_channels = 2       # Channel count
 device = "/dev/video21"    # V4L2 device path
 output_width = 640         # Output width in pixels
 output_height = 480        # Output height in pixels
+# mirror_output = false    # Horizontally mirror published video
 
 [speech_asr]
 language = "zh"            # Recognition language: "zh" or "en"

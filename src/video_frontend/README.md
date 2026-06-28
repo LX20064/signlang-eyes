@@ -24,6 +24,7 @@ All module executables also accept `--log-file <path>` and `--log-rotate-size <b
 | `--output-width` | (matches capture) | Published output width in pixels |
 | `--output-height` | (matches capture) | Published output height in pixels |
 | `--fps` | `30` | Requested camera frame rate |
+| `--mirror-output` | `false` | Horizontally mirror the published RGB output frame |
 | `--help` / `-h` | — | Print usage |
 
 > **Note**: `--capture-width` and `--capture-height` must be specified together (or omitted together). Same rule applies to `--output-width` and `--output-height`.
@@ -35,12 +36,12 @@ All module executables also accept `--log-file <path>` and `--log-rotate-size <b
 - **Capture Pixel Format**: YUYV 4:2:2 or MJPEG
 - **Published Pixel Format**: RGB24
 - **Output Frame Size**: `width × height × 3` bytes
-- **Hardware Acceleration**: Rockchip RGA used for YUYV→RGB24 conversion and scaling
+- **Hardware Acceleration**: Rockchip RGA used for YUYV→RGB24 conversion, scaling, and optional horizontal mirroring
 
 ### Processing Pipeline
 
-1. **YUYV capture**: RGA hardware converts YUYV to RGB24 and scales in a single operation
-2. **MJPEG capture**: libjpeg-turbo decodes to RGB24, then RGA scales if needed
+1. **YUYV capture**: RGA hardware converts YUYV to RGB24, scales, and optionally mirrors in a single operation
+2. **MJPEG capture**: libjpeg-turbo decodes to RGB24, then RGA scales and optionally mirrors
 
 ### RGA Hardware Acceleration
 

@@ -49,8 +49,9 @@ auto main(int argc, char** argv) -> int {
 
     const auto output_format = resolve_output_format(capture_format, options.output_format);
     spdlog::info("Actual output: {}x{}", output_format.width, output_format.height);
+    spdlog::info("Mirror output: {}", options.mirror_output ? "enabled" : "disabled");
 
-    VideoProcessor video_processor{capture_format, output_format};
+    VideoProcessor video_processor{capture_format, output_format, options.mirror_output};
     VideoPublisher publisher{options.service_name,
                              video_processor.max_output_size_bytes(capture_device.max_frame_size_bytes())};
 

@@ -29,8 +29,9 @@ namespace signlang::video_frontend {
 
   } // namespace
 
-  VideoProcessor::VideoProcessor(VideoFormat capture_format, VideoFormat output_format) :
-      capture_format_{capture_format}, output_format_{output_format}, jpeg_decompressor_{nullptr} {
+  VideoProcessor::VideoProcessor(VideoFormat capture_format, VideoFormat output_format, bool mirror_output) :
+      capture_format_{capture_format}, output_format_{output_format}, mirror_output_{mirror_output},
+      jpeg_decompressor_{nullptr} {
     if (output_format_.pixel_format != kPixelFormatRgb24) {
       throw std::runtime_error("Video output pixel format must be RGB24");
     }
@@ -103,7 +104,7 @@ namespace signlang::video_frontend {
       throw std::runtime_error("RGB video frame exceeds loaned output payload size");
     }
 
-    // RGA hardware accelerator: YUYV→RGB conversion + resize in one operation
+    // RGA hardware accelerator: YUYV→RGB conversion + resize, with optional horizontal mirror.
     const auto src_buffer_size = static_cast<int>(captured_frame.size_bytes);
     const auto src_handle = importbuffer_virtualaddr(const_cast<std::uint8_t*>(captured_frame.data), src_buffer_size);
     if (src_handle == 0) {
@@ -121,14 +122,26 @@ namespace signlang::video_frontend {
                                            static_cast<int>(capture_format_.height), RK_FORMAT_YUYV_422);
     const auto dst_img = wrapbuffer_handle(dst_handle, static_cast<int>(output_format_.width),
                                            static_cast<int>(output_format_.height), RK_FORMAT_RGB_888);
+    const auto src_rect =
+        im_rect{.x = 0,
+                .y = 0,
+                .width = static_cast<int>(capture_format_.width),
+                .height = static_cast<int>(capture_format_.height)};
+    const auto dst_rect =
+        im_rect{.x = 0,
+                .y = 0,
+                .width = static_cast<int>(output_format_.width),
+                .height = static_cast<int>(output_format_.height)};
+    const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+    const auto usage = IM_SYNC | (mirror_output_ ? IM_HAL_TRANSFORM_FLIP_H : 0);
 
-    const auto status = imresize(src_img, dst_img, 0.0, 0.0, INTER_LINEAR, 1);
+    const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, usage);
 
     releasebuffer_handle(dst_handle);
     releasebuffer_handle(src_handle);
 
     if (status != IM_STATUS_SUCCESS) {
-      throw std::runtime_error(std::string{"RGA YUYV resize failed with status: "} +
+      throw std::runtime_error(std::string{"RGA YUYV processing failed with status: "} +
                                std::to_string(static_cast<int>(status)));
     }
   }
@@ -165,7 +178,7 @@ namespace signlang::video_frontend {
       throw std::runtime_error(std::string{"Failed to decode MJPEG frame: "} + tjGetErrorStr2(jpeg_decompressor_));
     }
 
-    // Step 2: Resize using RGA hardware accelerator
+    // Step 2: Resize with optional horizontal mirror using RGA hardware accelerator
     const auto src_buffer_size = static_cast<int>(capture_rgb_buffer_.size());
     const auto src_handle = importbuffer_virtualaddr(capture_rgb_buffer_.data(), src_buffer_size);
     if (src_handle == 0) {
@@ -183,14 +196,26 @@ namespace signlang::video_frontend {
                                            static_cast<int>(capture_format_.height), RK_FORMAT_RGB_888);
     const auto dst_img = wrapbuffer_handle(dst_handle, static_cast<int>(output_format_.width),
                                            static_cast<int>(output_format_.height), RK_FORMAT_RGB_888);
+    const auto src_rect =
+        im_rect{.x = 0,
+                .y = 0,
+                .width = static_cast<int>(capture_format_.width),
+                .height = static_cast<int>(capture_format_.height)};
+    const auto dst_rect =
+        im_rect{.x = 0,
+                .y = 0,
+                .width = static_cast<int>(output_format_.width),
+                .height = static_cast<int>(output_format_.height)};
+    const auto empty_rect = im_rect{.x = 0, .y = 0, .width = 0, .height = 0};
+    const auto usage = IM_SYNC | (mirror_output_ ? IM_HAL_TRANSFORM_FLIP_H : 0);
 
-    const auto status = imresize(src_img, dst_img, 0.0, 0.0, INTER_LINEAR, 1);
+    const auto status = improcess(src_img, dst_img, {}, src_rect, dst_rect, empty_rect, usage);
 
     releasebuffer_handle(dst_handle);
     releasebuffer_handle(src_handle);
 
     if (status != IM_STATUS_SUCCESS) {
-      throw std::runtime_error(std::string{"RGA RGB resize failed with status: "} +
+      throw std::runtime_error(std::string{"RGA RGB processing failed with status: "} +
                                std::to_string(static_cast<int>(status)));
     }
   }
