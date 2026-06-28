@@ -3,7 +3,9 @@
 #include "SQLiteCpp.h"
 #include "spdlog/spdlog.h"
 
+#include <array>
 #include <charconv>
+#include <ctime>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -62,8 +64,30 @@ namespace signlang::signlang_manager {
       return blob;
     }
 
+    auto utc_backup_timestamp() -> std::string {
+      const auto now = std::time(nullptr);
+      auto utc_time = std::tm{};
+      gmtime_r(&now, &utc_time);
+
+      auto buffer = std::array<char, 32>{};
+      if (std::strftime(buffer.data(), buffer.size(), "%Y%m%dT%H%M%SZ", &utc_time) == 0) {
+        return "unknown-time";
+      }
+      return buffer.data();
+    }
+
     auto backup_path_for(const std::filesystem::path& database_path) -> std::filesystem::path {
-      return std::filesystem::path{database_path.string() + ".bak"};
+      namespace fs = std::filesystem;
+
+      const auto base_path =
+          fs::path{database_path.string() + ".invalid-" + utc_backup_timestamp() + ".bak"};
+      auto candidate = base_path;
+      auto error = std::error_code{};
+      for (auto suffix = 1U; fs::exists(candidate, error) && !error; ++suffix) {
+        candidate = fs::path{base_path.string() + "." + std::to_string(suffix)};
+      }
+
+      return candidate;
     }
 
   } // namespace
@@ -90,7 +114,11 @@ namespace signlang::signlang_manager {
 
   auto PrototypeDatabase::is_valid_schema() const -> bool {
     try {
-      auto database = SQLite::Database{path_, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE};
+      if (!std::filesystem::exists(path_)) {
+        return false;
+      }
+
+      auto database = SQLite::Database{path_, SQLite::OPEN_READONLY};
       if (!database.tableExists("meta") || !database.tableExists("gestures") || !database.tableExists("samples")) {
         return false;
       }
@@ -114,7 +142,7 @@ namespace signlang::signlang_manager {
     std::error_code error;
     if (fs::exists(db_path, error) && !error) {
       const auto backup_path = backup_path_for(db_path);
-      fs::copy_file(db_path, backup_path, fs::copy_options::overwrite_existing, error);
+      fs::copy_file(db_path, backup_path, fs::copy_options::none, error);
       if (error) {
         throw std::runtime_error("Failed to backup invalid prototype database '" + db_path.string() + "' to '" +
                                  backup_path.string() + "': " + error.message());
